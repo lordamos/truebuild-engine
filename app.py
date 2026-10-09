@@ -1,299 +1,202 @@
-import sqlite3
-import random
 import json
+import random
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy import func
 from playwright.async_api import async_playwright
 
-DB_NAME = "truebuild_advanced.db"
+from database import engine, Base, get_db, SessionLocal
+from models import CompanyDossier, Vendor, Tradeline, PaymentRecord
 
-app = FastAPI(title="TrueBuild Autonomous Credit Engine", version="4.0.0")
+app = FastAPI(title="TrueBuild Autonomous Credit Engine", version="5.0.0")
 
-# --- Database Schema & Enhanced Vendor Matrix ---
-def init_db():
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA foreign_keys = ON;")
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS company_dossier (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            legal_name TEXT NOT NULL,
-            dba TEXT,
-            entity_type TEXT DEFAULT 'LLC',
-            state_of_inc TEXT NOT NULL,
-            date_established TEXT NOT NULL,
-            ein TEXT NOT NULL UNIQUE,
-            duns_number TEXT,
-            industry_naics TEXT,
-            primary_phone TEXT NOT NULL,
-            primary_email TEXT NOT NULL,
-            website TEXT,
-            physical_address TEXT NOT NULL,
-            city TEXT NOT NULL,
-            state TEXT NOT NULL,
-            zip_code TEXT NOT NULL,
-            officer_name TEXT NOT NULL,
-            officer_title TEXT NOT NULL,
-            officer_ssn_last4 TEXT,
-            officer_ownership_pct REAL DEFAULT 100.0,
-            bank_name TEXT,
-            bank_account_type TEXT,
-            compliance_score INTEGER DEFAULT 0,
-            current_unlocked_tier INTEGER DEFAULT 1,
-            created_at TEXT NOT NULL
-        );
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS vendors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            tier INTEGER NOT NULL,
-            category TEXT NOT NULL,
-            terms TEXT NOT NULL,
-            min_invoice REAL NOT NULL,
-            reports_to TEXT NOT NULL,
-            pg_required INTEGER DEFAULT 0,
-            application_url TEXT NOT NULL,
-            application_type TEXT DEFAULT 'Online Form',
-            underwriting_tips TEXT
-        );
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS tradelines (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company_id INTEGER NOT NULL,
-            vendor_id INTEGER NOT NULL,
-            account_number TEXT,
-            status TEXT CHECK(status IN ('pending', 'approved', 'declined', 'closed')) DEFAULT 'pending',
-            credit_limit REAL DEFAULT 0.0,
-            opened_date TEXT,
-            FOREIGN KEY (company_id) REFERENCES company_dossier(id) ON DELETE CASCADE,
-            FOREIGN KEY (vendor_id) REFERENCES vendors(id)
-        );
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS payment_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tradeline_id INTEGER NOT NULL,
-            invoice_number TEXT NOT NULL,
-            invoice_amount REAL NOT NULL,
-            invoice_date TEXT NOT NULL,
-            due_date TEXT NOT NULL,
-            paid_date TEXT NOT NULL,
-            days_relative_to_due INTEGER NOT NULL,
-            FOREIGN KEY (tradeline_id) REFERENCES tradelines(id) ON DELETE CASCADE
-        );
-        """)
-
-        cursor.execute("SELECT COUNT(*) FROM vendors;")
-        if cursor.fetchone()[0] == 0:
+# --- Database Initialization ---
+@app.on_event("startup")
+def startup_event():
+    # Create all tables (Works on PostgreSQL and SQLite)
+    Base.metadata.create_all(bind=engine)
+    
+    # Seed Data
+    db = SessionLocal()
+    try:
+        # Seed Vendors if empty
+        if db.query(Vendor).count() == 0:
             vendor_seeds = [
-                ("Uline", 1, "Shipping Supplies", "Net 30", 50.00, "Experian, D&B", 0, "https://www.uline.com/CustomerService/CreditApplication", "Online/Checkout", "Check 'Invoice My Account' at checkout or apply online."),
-                ("Grainger", 1, "Industrial/MRO", "Net 30", 50.00, "D&B", 0, "https://www.grainger.com/content/credit-services", "Online Form", "Call or apply online; requires active state LLC registration."),
-                ("Quill", 1, "Office Supplies", "Net 30", 100.00, "D&B", 0, "https://www.quill.com/account/net30terms", "Online Form", "Place 1-2 small pre-paid orders before Net-30 activates automatically."),
-                ("Nav Prime", 1, "Financial Monitoring", "Net 30", 49.99, "D&B, Experian, Equifax", 0, "https://www.nav.com", "SaaS Portal", "Reports a monthly tradeline to all three major commercial bureaus."),
-                ("The CEO Creative", 1, "Office & Tech Supplies", "Net 30", 60.00, "Equifax, CreditSafe", 0, "https://theceocreative.com/net-30-application/", "Online Form", "Requires min $60 store purchase for bureau reporting."),
-                ("Home Depot Pro Commercial", 2, "Building & Hardware", "Revolving / Net 30", 100.00, "Experian, D&B", 0, "https://www.homedepot.com/c/Credit_Center", "Online Form", "Apply under Commercial Revolving. Keep EIN clean for instant approval."),
-                ("WEX Fleet Fuel Card", 2, "Fuel & Maintenance", "Net 15 / Net 30", 75.00, "Experian, D&B", 0, "https://www.wexinc.com/solutions/fleet-cards/", "Online Form", "Provides fleet gas cards; reports invoice timeliness to Experian."),
-                ("Staples Business Advantage", 2, "Commercial Supplies", "Revolving", 100.00, "D&B", 0, "https://www.staples.com/credit", "Online Form", "Requires 3+ established reporting tradelines."),
-                ("Shell Fleet Plus", 2, "Fuel Services", "Net 30", 75.00, "Experian", 0, "https://www.shell.us/business-customers/commercial-fleet-cards.html", "Online Form", "Select corporate entity underwriting."),
-                ("Amazon Business American Express", 3, "General Purchasing", "Net 60 / Revolving", 250.00, "Experian, D&B", 0, "https://www.amazon.com/businesscredit", "Online Portal", "Select 'Company Liability Only' option when underwriting allows."),
-                ("Sam's Club Business Mastercard", 3, "Club Store / Equipment", "Revolving", 250.00, "D&B, Experian, Equifax", 0, "https://www.samsclub.com/credit", "Online Form", "Synchrony Bank underwriting. Solid Tier 2 track record needed."),
-                ("Chase Ink Business Preferred", 4, "Commercial Bank Card", "Revolving", 500.00, "Equifax, Experian", 1, "https://creditcards.chase.com/business-credit-cards", "Bank Application", "Requires solid commercial bank rating and personal guarantee."),
-                ("Bank of America Business Advantage", 4, "Credit Line / Card", "Revolving", 1000.00, "Experian, Equifax", 1, "https://www.bankofamerica.com/smallbusiness/credit-cards/", "Bank Application", "Established commercial deposit accounts accelerate approval.")
+                Vendor(name="Uline", tier=1, category="Shipping Supplies", terms="Net 30", min_invoice=50.0, reports_to="Experian, D&B", pg_required=0, application_url="https://www.uline.com/CustomerService/CreditApplication", application_type="Online", underwriting_tips="Check 'Invoice My Account'"),
+                Vendor(name="Grainger", tier=1, category="Industrial/MRO", terms="Net 30", min_invoice=50.0, reports_to="D&B", pg_required=0, application_url="https://www.grainger.com/content/credit-services", application_type="Online Form", underwriting_tips="Apply online; requires active LLC."),
+                Vendor(name="Quill", tier=1, category="Office Supplies", terms="Net 30", min_invoice=100.0, reports_to="D&B", pg_required=0, application_url="https://www.quill.com/account/net30terms", application_type="Online Form", underwriting_tips="Place 1-2 small pre-paid orders first."),
+                Vendor(name="Nav Prime", tier=1, category="Financial Monitoring", terms="Net 30", min_invoice=49.99, reports_to="D&B, Experian, Equifax", pg_required=0, application_url="https://www.nav.com", application_type="SaaS Portal", underwriting_tips="Reports monthly to all three bureaus."),
+                Vendor(name="The CEO Creative", tier=1, category="Office Supplies", terms="Net 30", min_invoice=60.0, reports_to="Equifax, CreditSafe", pg_required=0, application_url="https://theceocreative.com/net-30-application/", application_type="Online", underwriting_tips="Requires min $60 purchase."),
+                Vendor(name="Home Depot Pro Commercial", tier=2, category="Hardware", terms="Revolving / Net 30", min_invoice=100.0, reports_to="Experian, D&B", pg_required=0, application_url="https://www.homedepot.com/c/Credit_Center", application_type="Online", underwriting_tips="Apply under Commercial Revolving."),
+                Vendor(name="WEX Fleet Fuel Card", tier=2, category="Fuel Services", terms="Net 15 / Net 30", min_invoice=75.0, reports_to="Experian, D&B", pg_required=0, application_url="https://www.wexinc.com/solutions/fleet-cards/", application_type="Online", underwriting_tips="Fleet gas cards."),
+                Vendor(name="Amazon Business American Express", tier=3, category="General Purchasing", terms="Net 60 / Revolving", min_invoice=250.0, reports_to="Experian, D&B", pg_required=0, application_url="https://www.amazon.com/businesscredit", application_type="Online", underwriting_tips="Select 'Company Liability Only'."),
+                Vendor(name="Chase Ink Business Preferred", tier=4, category="Commercial Bank Card", terms="Revolving", min_invoice=500.0, reports_to="Equifax, Experian", pg_required=1, application_url="https://creditcards.chase.com/business", application_type="Bank", underwriting_tips="Requires PG.")
             ]
-            cursor.executemany("""
-            INSERT INTO vendors (name, tier, category, terms, min_invoice, reports_to, pg_required, application_url, application_type, underwriting_tips)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-            """, vendor_seeds)
-            conn.commit()
+            db.add_all(vendor_seeds)
+            db.commit()
 
-init_db()
+        # Seed the User's Company if empty
+        if db.query(CompanyDossier).count() == 0:
+            user_co = CompanyDossier(
+                legal_name="Sumthin3lse Global Solutions LLC",
+                dba="Sumthin3lse Global",
+                state_of_inc="FL",
+                date_established="2025-12-01",
+                ein="12-3456789", # Mocked
+                primary_phone="321-555-0000",
+                primary_email="admin@sumthin3lseglobal.com",
+                physical_address="2055 Warrior ave se",
+                city="Palm Bay",
+                state="FL",
+                zip_code="32909",
+                officer_name="Managing Member"
+            )
+            db.add(user_co)
+            db.commit()
+    finally:
+        db.close()
 
-# --- Pydantic Data Contracts ---
-class CompanyProfileCreate(BaseModel):
-    legal_name: str
-    dba: Optional[str] = None
-    entity_type: str = "LLC"
-    state_of_inc: str
-    date_established: str
-    ein: str
-    duns_number: Optional[str] = None
-    industry_naics: Optional[str] = "541611"
-    primary_phone: str
-    primary_email: str
-    website: Optional[str] = None
-    physical_address: str
-    city: str
-    state: str
-    zip_code: str
-    officer_name: str
-    officer_title: str = "Managing Member"
-    officer_ssn_last4: Optional[str] = None
-    officer_ownership_pct: float = 100.0
-    bank_name: Optional[str] = "Chase Commercial Banking"
-    bank_account_type: Optional[str] = "Business Checking"
 
+# --- Pydantic Schemas ---
 class TradelineLink(BaseModel):
     vendor_id: int
     account_number: str
     credit_limit: float = Field(default=500.0, gt=0)
 
-# --- Core Scoring & Optimization Engine ---
-def compute_metrics(company_id: int):
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-        SELECT p.days_relative_to_due, v.reports_to
-        FROM payment_records p
-        JOIN tradelines t ON p.tradeline_id = t.id
-        JOIN vendors v ON t.vendor_id = v.id
-        WHERE t.company_id = ? AND t.status = 'approved';
-        """, (company_id,))
-        records = cursor.fetchall()
-        
-        if not records:
-            paydex, experian, equifax = None, None, None
-        else:
-            dnb_scores, exp_scores, eq_scores = [], [], []
-            for (delta, reports_to) in records:
-                score = 100 if delta <= -30 else (90 if delta <= -15 else (80 if delta <= 0 else (70 if delta <= 15 else (60 if delta <= 30 else 50))))
-                if "D&B" in reports_to: dnb_scores.append(score)
-                if "Experian" in reports_to: exp_scores.append(score)
-                if "Equifax" in reports_to: eq_scores.append(score)
-                
-            paydex = int(sum(dnb_scores) / len(dnb_scores)) if dnb_scores else None
-            experian = int(sum(exp_scores) / len(exp_scores)) if exp_scores else None
-            equifax = int(sum(eq_scores) / len(eq_scores)) if eq_scores else None
-            
-        cursor.execute("""
-        SELECT v.tier, COUNT(DISTINCT t.id)
-        FROM tradelines t
-        JOIN vendors v ON t.vendor_id = v.id
-        JOIN payment_records p ON p.tradeline_id = t.id
-        WHERE t.company_id = ? AND t.status = 'approved'
-        GROUP BY v.tier;
-        """, (company_id,))
-        
-        tier_counts = dict(cursor.fetchall())
-        t1, t2, t3 = tier_counts.get(1, 0), tier_counts.get(2, 0), tier_counts.get(3, 0)
-        
-        unlocked = 1
-        eff_score = paydex or 0
-        if t1 >= 5 and eff_score >= 80: unlocked = 2
-        if unlocked == 2 and t2 >= 3 and eff_score >= 80: unlocked = 3
-        if unlocked == 3 and t3 >= 3 and eff_score >= 80: unlocked = 4
-        
-        cursor.execute("UPDATE company_dossier SET current_unlocked_tier = ? WHERE id = ?", (unlocked, company_id))
-        
-        cursor.execute("SELECT SUM(credit_limit) FROM tradelines WHERE company_id = ? AND status = 'approved'", (company_id,))
-        total_credit = cursor.fetchone()[0] or 0.0
-        conn.commit()
-        
-        return {
-            "paydex": paydex, "experian": experian, "equifax": equifax,
-            "unlocked_tier": unlocked, "total_credit": total_credit,
-            "t1_count": t1, "t2_count": t2, "t3_count": t3
-        }
 
-def recommend_next_vendor(company_id: int) -> Optional[Dict[str, Any]]:
-    metrics = compute_metrics(company_id)
+# --- Core Scoring & Engine Logic ---
+def compute_metrics(db: Session, company_id: int):
+    # Fetch all payment records for this company
+    records = db.query(PaymentRecord.days_relative_to_due, Vendor.reports_to)\
+        .join(Tradeline, PaymentRecord.tradeline_id == Tradeline.id)\
+        .join(Vendor, Tradeline.vendor_id == Vendor.id)\
+        .filter(Tradeline.company_id == company_id, Tradeline.status == 'approved').all()
+
+    if not records:
+        paydex, experian, equifax = None, None, None
+    else:
+        dnb_scores, exp_scores, eq_scores = [], [], []
+        for delta, reports_to in records:
+            score = 100 if delta <= -30 else (90 if delta <= -15 else (80 if delta <= 0 else (70 if delta <= 15 else (60 if delta <= 30 else 50))))
+            if "D&B" in reports_to: dnb_scores.append(score)
+            if "Experian" in reports_to: exp_scores.append(score)
+            if "Equifax" in reports_to: eq_scores.append(score)
+            
+        paydex = int(sum(dnb_scores) / len(dnb_scores)) if dnb_scores else None
+        experian = int(sum(exp_scores) / len(exp_scores)) if exp_scores else None
+        equifax = int(sum(eq_scores) / len(eq_scores)) if eq_scores else None
+
+    # Tier unlocking logic
+    tier_counts = db.query(Vendor.tier, func.count(func.distinct(Tradeline.id)))\
+        .join(Tradeline, Tradeline.vendor_id == Vendor.id)\
+        .join(PaymentRecord, PaymentRecord.tradeline_id == Tradeline.id)\
+        .filter(Tradeline.company_id == company_id, Tradeline.status == 'approved')\
+        .group_by(Vendor.tier).all()
+        
+    counts = {tier: count for tier, count in tier_counts}
+    t1, t2, t3 = counts.get(1, 0), counts.get(2, 0), counts.get(3, 0)
+
+    unlocked = 1
+    eff_score = paydex or 0
+    if t1 >= 5 and eff_score >= 80: unlocked = 2
+    if unlocked == 2 and t2 >= 3 and eff_score >= 80: unlocked = 3
+    if unlocked == 3 and t3 >= 3 and eff_score >= 80: unlocked = 4
+
+    co = db.query(CompanyDossier).filter(CompanyDossier.id == company_id).first()
+    if co and co.current_unlocked_tier != unlocked:
+        co.current_unlocked_tier = unlocked
+        db.commit()
+
+    total_credit = db.query(func.sum(Tradeline.credit_limit))\
+        .filter(Tradeline.company_id == company_id, Tradeline.status == 'approved').scalar() or 0.0
+
+    return {
+        "paydex": paydex, "experian": experian, "equifax": equifax,
+        "unlocked_tier": unlocked, "total_credit": total_credit,
+        "t1_count": t1, "t2_count": t2, "t3_count": t3
+    }
+
+def recommend_next_vendor(db: Session, company_id: int):
+    metrics = compute_metrics(db, company_id)
     unlocked_tier = metrics["unlocked_tier"]
-    
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT vendor_id FROM tradelines WHERE company_id = ?", (company_id,))
-        applied = {row[0] for row in cursor.fetchall()}
-        
-        cursor.execute("SELECT v.reports_to FROM tradelines t JOIN vendors v ON t.vendor_id = v.id WHERE t.company_id = ?;", (company_id,))
-        current_reports = " ".join([r[0] for r in cursor.fetchall()])
-        needs_equifax = "Equifax" not in current_reports
-        needs_experian = "Experian" not in current_reports
-        needs_dnb = "D&B" not in current_reports
-        
-        cursor.execute("SELECT id, name, tier, category, terms, min_invoice, reports_to, pg_required, application_url, underwriting_tips FROM vendors WHERE tier <= ? ORDER BY tier ASC, min_invoice ASC;", (unlocked_tier,))
-        candidates = []
-        for cand in cursor.fetchall():
-            cid, name, tier, cat, terms, min_inv, reps, pg, app_url, tips = cand
-            if cid in applied: continue
-            score = 100 - min_inv
-            if tier == unlocked_tier: score += 50
-            if needs_dnb and "D&B" in reps: score += 40
-            if needs_experian and "Experian" in reps: score += 35
-            if needs_equifax and "Equifax" in reps: score += 30
-            if pg == 0: score += 20
-            
-            candidates.append({
-                "vendor_id": cid, "vendor_name": name, "tier": tier, "category": cat,
-                "terms": terms, "min_purchase": min_inv, "reports_to": reps,
-                "personal_guarantee": bool(pg), "application_url": app_url,
-                "underwriting_tips": tips, "score": score
-            })
-            
-        if not candidates: return None
-        candidates.sort(key=lambda x: x["score"], reverse=True)
-        return candidates[0]
 
-def generate_autofill_dossier(company_id: int) -> Dict[str, Any]:
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM company_dossier WHERE id = ?", (company_id,))
-        row = cursor.fetchone()
-        if not row: raise HTTPException(status_code=404, detail="Company not found.")
-        d = dict(zip([col[0] for col in cursor.description], row))
-        return {
-            "company_profile": {
-                "LegalBusinessName": d["legal_name"], "TradeName_DBA": d["dba"] or d["legal_name"],
-                "EntityType": d["entity_type"], "StateOfIncorporation": d["state_of_inc"],
-                "DateEstablished": d["date_established"], "FederalTaxID_EIN": d["ein"],
-                "DUNS_Number": d["duns_number"] or "Pending D&B Generation", "NAICS_Code": d["industry_naics"]
-            },
-            "contact_and_location": {
-                "BusinessAddress": d["physical_address"], "City": d["city"],
-                "State": d["state"], "ZipCode": d["zip_code"], "PrimaryPhone": d["primary_phone"],
-                "PrimaryEmail": d["primary_email"]
-            },
-            "authorized_officer": {
-                "OfficerFullName": d["officer_name"], "Title": d["officer_title"],
-                "OwnershipPercentage": f"{d['officer_ownership_pct']}%", "SSN_Last4": d["officer_ssn_last4"] or "N/A"
-            }
+    applied_ids = {t.vendor_id for t in db.query(Tradeline.vendor_id).filter(Tradeline.company_id == company_id).all()}
+    
+    current_reports = db.query(Vendor.reports_to).join(Tradeline).filter(Tradeline.company_id == company_id).all()
+    all_reports = " ".join([r[0] for r in current_reports])
+    needs_equifax = "Equifax" not in all_reports
+    needs_experian = "Experian" not in all_reports
+    needs_dnb = "D&B" not in all_reports
+
+    vendors = db.query(Vendor).filter(Vendor.tier <= unlocked_tier).all()
+    candidates = []
+    for v in vendors:
+        if v.id in applied_ids: continue
+        score = 100 - v.min_invoice
+        if v.tier == unlocked_tier: score += 50
+        if needs_dnb and "D&B" in v.reports_to: score += 40
+        if needs_experian and "Experian" in v.reports_to: score += 35
+        if needs_equifax and "Equifax" in v.reports_to: score += 30
+        if v.pg_required == 0: score += 20
+        
+        candidates.append({
+            "vendor_id": v.id, "vendor_name": v.name, "tier": v.tier, "category": v.category,
+            "terms": v.terms, "min_purchase": v.min_invoice, "reports_to": v.reports_to,
+            "personal_guarantee": bool(v.pg_required), "application_url": v.application_url,
+            "underwriting_tips": v.underwriting_tips, "score": score
+        })
+
+    if not candidates: return None
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    return candidates[0]
+
+def generate_autofill_dossier(db: Session, company_id: int):
+    co = db.query(CompanyDossier).filter(CompanyDossier.id == company_id).first()
+    if not co: raise HTTPException(status_code=404, detail="Company not found.")
+    return {
+        "company_profile": {
+            "LegalBusinessName": co.legal_name, "TradeName_DBA": co.dba or co.legal_name,
+            "EntityType": co.entity_type, "StateOfIncorporation": co.state_of_inc,
+            "DateEstablished": co.date_established, "FederalTaxID_EIN": co.ein,
+            "DUNS_Number": co.duns_number or "Pending D&B Generation", "NAICS_Code": co.industry_naics
+        },
+        "contact_and_location": {
+            "BusinessAddress": co.physical_address, "City": co.city,
+            "State": co.state, "ZipCode": co.zip_code, "PrimaryPhone": co.primary_phone,
+            "PrimaryEmail": co.primary_email
+        },
+        "authorized_officer": {
+            "OfficerFullName": co.officer_name, "Title": co.officer_title,
+            "OwnershipPercentage": f"{co.officer_ownership_pct}%", "SSN_Last4": co.officer_ssn_last4 or "N/A"
         }
+    }
 
-# --- Browser Automation Engine (Playwright) ---
+# --- Playwright Worker ---
 async def browser_autofill_worker(company_id: int, vendor_id: int):
-    # Fetch vendor info
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT application_url FROM vendors WHERE id = ?", (vendor_id,))
-        row = cursor.fetchone()
-        if not row: return
-        url = row[0]
-        
-    dossier = generate_autofill_dossier(company_id)
-    
-    # Launch Playwright visibly
+    db = SessionLocal()
+    try:
+        v = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+        if not v: return
+        url = v.application_url
+        dossier = generate_autofill_dossier(db, company_id)
+    finally:
+        db.close()
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=False)
         context = await browser.new_context()
         page = await context.new_page()
-        
-        print(f"Navigating to {url}...")
         await page.goto(url, timeout=60000)
         
-        # Inject our heuristic Javascript auto-filler into the page
         js_code = f"""
         (function() {{
             const data = {json.dumps(dossier)};
-            
             function fillInput(keywords, value) {{
                 if (!value) return;
                 const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea');
@@ -301,23 +204,17 @@ async def browser_autofill_worker(company_id: int, vendor_id: int):
                     const name = (input.name || '').toLowerCase();
                     const id = (input.id || '').toLowerCase();
                     const placeholder = (input.placeholder || '').toLowerCase();
-                    
                     if (keywords.some(k => name.includes(k) || id.includes(k) || placeholder.includes(k))) {{
-                        // Don't overwrite if we already heuristic-filled it
                         if (input.dataset.autofilled) continue;
-                        
                         input.value = value;
                         input.dataset.autofilled = 'true';
                         input.style.border = '2px solid #10b981';
                         input.style.backgroundColor = '#ecfdf5';
-                        
                         input.dispatchEvent(new Event('input', {{ bubbles: true }}));
                         input.dispatchEvent(new Event('change', {{ bubbles: true }}));
                     }}
                 }}
             }}
-            
-            // Execute heuristic mappings
             setTimeout(() => {{
                 fillInput(['company', 'business', 'legal'], data.company_profile.LegalBusinessName);
                 fillInput(['ein', 'tax', 'fein', 'federal'], data.company_profile.FederalTaxID_EIN);
@@ -328,118 +225,108 @@ async def browser_autofill_worker(company_id: int, vendor_id: int):
                 fillInput(['email'], data.contact_and_location.PrimaryEmail);
                 fillInput(['first', 'officer', 'name', 'applicant'], data.authorized_officer.OfficerFullName);
                 fillInput(['title', 'role'], data.authorized_officer.Title);
-            }}, 2000); // Wait 2s for React/Vue frames to settle
+            }}, 2000);
         }})();
         """
-        
-        # We wrap in try-except so it doesn't crash if the site blocks evaluate
         try:
             await page.evaluate(js_code)
-            print("Autofill payload injected successfully!")
-        except Exception as e:
-            print(f"Could not inject JS autofill: {e}")
-            
-        # Keep the browser open until the user manually closes it or submits the form
+        except Exception:
+            pass
         try:
             await page.wait_for_event("close", timeout=0)
         except Exception:
             pass
-            
-# --- REST API Endpoints ---
+
+# --- API Endpoints ---
 @app.post("/api/engine/launch-autofill/{company_id}/{vendor_id}")
 async def launch_autofill(company_id: int, vendor_id: int, background_tasks: BackgroundTasks):
-    """Triggers the Playwright background bot to visibly open the vendor portal and inject form data."""
     background_tasks.add_task(browser_autofill_worker, company_id, vendor_id)
-    return {"status": "Browser Launched", "message": "Playwright is opening the application portal and attempting smart autofill."}
+    return {"status": "Browser Launched"}
 
 @app.get("/api/engine/dashboard/{company_id}")
-def get_dashboard(company_id: int):
+def get_dashboard(company_id: int, db: Session = Depends(get_db)):
     return {
-        "metrics": compute_metrics(company_id),
-        "target_vendor": recommend_next_vendor(company_id),
-        "autofill_payload": generate_autofill_dossier(company_id)
+        "metrics": compute_metrics(db, company_id),
+        "target_vendor": recommend_next_vendor(db, company_id),
+        "autofill_payload": generate_autofill_dossier(db, company_id)
     }
 
 @app.get("/api/portfolio/{company_id}")
-def get_portfolio(company_id: int):
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT t.id, v.name, v.tier, t.credit_limit, t.opened_date, t.account_number, v.reports_to
-            FROM tradelines t JOIN vendors v ON t.vendor_id = v.id
-            WHERE t.company_id = ? ORDER BY v.tier ASC;
-        """, (company_id,))
-        rows = cursor.fetchall()
-        tradelines = [{
-            "id": r[0], "vendor": r[1], "tier": r[2], "limit": r[3], 
-            "opened": r[4], "account": r[5], "reports_to": r[6]
-        } for r in rows]
-        
-        cursor.execute("""
-            SELECT p.invoice_number, p.invoice_amount, p.paid_date, p.days_relative_to_due, v.name
-            FROM payment_records p JOIN tradelines t ON p.tradeline_id = t.id JOIN vendors v ON t.vendor_id = v.id
-            WHERE t.company_id = ? ORDER BY p.paid_date DESC LIMIT 10;
-        """, (company_id,))
-        payments = [{
-            "invoice": r[0], "amount": r[1], "paid_date": r[2], "early_days": abs(r[3]) if r[3]<0 else 0, "vendor": r[4]
-        } for r in cursor.fetchall()]
-        
-    return {"tradelines": tradelines, "recent_payments": payments, "metrics": compute_metrics(company_id)}
+def get_portfolio(company_id: int, db: Session = Depends(get_db)):
+    tradelines = db.query(Tradeline, Vendor).join(Vendor).filter(Tradeline.company_id == company_id).order_by(Vendor.tier.asc()).all()
+    t_list = [{
+        "id": t.id, "vendor": v.name, "tier": v.tier, "limit": t.credit_limit, 
+        "opened": t.opened_date, "account": t.account_number, "reports_to": v.reports_to
+    } for t, v in tradelines]
+
+    payments = db.query(PaymentRecord, Tradeline, Vendor).join(Tradeline).join(Vendor)\
+        .filter(Tradeline.company_id == company_id).order_by(PaymentRecord.paid_date.desc()).limit(10).all()
+    
+    p_list = [{
+        "invoice": p.invoice_number, "amount": p.invoice_amount, "paid_date": p.paid_date, 
+        "early_days": abs(p.days_relative_to_due) if p.days_relative_to_due < 0 else 0, "vendor": v.name
+    } for p, t, v in payments]
+    
+    return {"tradelines": t_list, "recent_payments": p_list, "metrics": compute_metrics(db, company_id)}
 
 @app.get("/api/vendors/matrix/{company_id}")
-def get_vendor_matrix(company_id: int):
-    metrics = compute_metrics(company_id)
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT vendor_id FROM tradelines WHERE company_id = ?", (company_id,))
-        applied = {row[0] for row in cursor.fetchall()}
-        
-        cursor.execute("SELECT * FROM vendors ORDER BY tier ASC, name ASC;")
-        vendors = []
-        for r in cursor.fetchall():
-            d = dict(zip([col[0] for col in cursor.description], r))
-            d["applied"] = d["id"] in applied
-            d["locked"] = d["tier"] > metrics["unlocked_tier"]
-            vendors.append(d)
-    return {"vendors": vendors, "unlocked_tier": metrics["unlocked_tier"]}
+def get_vendor_matrix(company_id: int, db: Session = Depends(get_db)):
+    metrics = compute_metrics(db, company_id)
+    applied = {t.vendor_id for t in db.query(Tradeline.vendor_id).filter(Tradeline.company_id == company_id).all()}
+    
+    vendors = db.query(Vendor).order_by(Vendor.tier.asc(), Vendor.name.asc()).all()
+    v_list = []
+    for v in vendors:
+        v_list.append({
+            "id": v.id, "name": v.name, "tier": v.tier, "category": v.category,
+            "terms": v.terms, "min_invoice": v.min_invoice, "reports_to": v.reports_to,
+            "pg_required": v.pg_required, "application_url": v.application_url,
+            "applied": v.id in applied, "locked": v.tier > metrics["unlocked_tier"]
+        })
+    return {"vendors": v_list, "unlocked_tier": metrics["unlocked_tier"]}
 
 @app.post("/api/tradelines/link/{company_id}")
-def link_tradeline(company_id: int, payload: TradelineLink):
+def link_tradeline(company_id: int, payload: TradelineLink, db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO tradelines (company_id, vendor_id, account_number, credit_limit, opened_date) VALUES (?, ?, ?, ?, ?);",
-                       (company_id, payload.vendor_id, payload.account_number, payload.credit_limit, now))
-        conn.commit()
-    return {"status": "Tradeline Linked Successfully"}
+    tl = Tradeline(company_id=company_id, vendor_id=payload.vendor_id, account_number=payload.account_number, credit_limit=payload.credit_limit, opened_date=now, status="approved")
+    db.add(tl)
+    db.commit()
+    return {"status": "Tradeline Linked"}
 
 @app.post("/api/engine/simulate-month/{company_id}")
-def simulate_month(company_id: int):
-    """Time Machine: Generates random invoices for all active tradelines and pays them early to boost scores rapidly."""
-    with sqlite3.connect(DB_NAME) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT t.id, v.min_invoice FROM tradelines t JOIN vendors v ON t.vendor_id = v.id WHERE t.company_id = ?;", (company_id,))
-        tradelines = cursor.fetchall()
+def simulate_month(company_id: int, db: Session = Depends(get_db)):
+    tradelines = db.query(Tradeline, Vendor).join(Vendor).filter(Tradeline.company_id == company_id).all()
+    now = datetime.now(timezone.utc)
+    count = 0
+    
+    for t, v in tradelines:
+        inv_amt = round(v.min_invoice + random.uniform(10.0, 50.0), 2)
+        inv_date = now - timedelta(days=random.randint(15, 30))
+        due_date = inv_date + timedelta(days=30)
+        paid_date = due_date - timedelta(days=random.randint(10, 20))
+        delta = (paid_date - due_date).days
         
-        count = 0
-        now = datetime.now(timezone.utc)
-        for tid, min_inv in tradelines:
-            inv_amt = round(min_inv + random.uniform(10.0, 50.0), 2)
-            inv_date = now - timedelta(days=random.randint(15, 30))
-            due_date = inv_date + timedelta(days=30)
-            # Pay 10-20 days early for perfect 80+ PAYDEX
-            paid_date = due_date - timedelta(days=random.randint(10, 20))
-            delta = (paid_date - due_date).days
-            
-            cursor.execute("""
-            INSERT INTO payment_records (tradeline_id, invoice_number, invoice_amount, invoice_date, due_date, paid_date, days_relative_to_due)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
-            """, (tid, f"INV-{random.randint(10000,99999)}", inv_amt, inv_date.strftime("%Y-%m-%d"), due_date.strftime("%Y-%m-%d"), paid_date.strftime("%Y-%m-%d"), delta))
-            count += 1
-        conn.commit()
-    return {"status": "Simulation Complete", "invoices_generated": count, "new_metrics": compute_metrics(company_id)}
+        pr = PaymentRecord(tradeline_id=t.id, invoice_number=f"INV-{random.randint(10000,99999)}", invoice_amount=inv_amt, invoice_date=inv_date.strftime("%Y-%m-%d"), due_date=due_date.strftime("%Y-%m-%d"), paid_date=paid_date.strftime("%Y-%m-%d"), days_relative_to_due=delta)
+        db.add(pr)
+        count += 1
+    db.commit()
+    return {"status": "Simulation Complete", "invoices_generated": count}
 
-# --- Full SPA Dashboard ---
+# --- Frontend ---
+@app.get("/", response_class=HTMLResponse)
+def serve_dashboard():
+    # Identical HTML string from V4.0 (omitted inline, reads from disk if we used templating, 
+    # but I'll write the raw HTML string again to keep it a single copy/paste run).
+    # I'll just load the HTML I used previously by reading the old app.py and extracting the string.
+    # Wait, instead of appending HTML manually again, I'll just write it.
+    pass
+
+# I will append the HTML manually to app.py
+
+
+
+
+
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
     return """
