@@ -219,7 +219,7 @@ async def browser_autofill_worker(company_id: int, vendor_id: int):
         db.close()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=True)
         page = await (await browser.new_context()).new_page()
         await page.goto(url, timeout=60000)
         try:

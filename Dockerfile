@@ -1,15 +1,15 @@
-FROM python:3.12-slim
+FROM mcr.microsoft.com/playwright/python:v1.42.0-jammy
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright browser binaries
+RUN playwright install chromium
+
 COPY . .
 
-# Initialize the database on startup
-RUN python -c "import app; app.init_db()"
+EXPOSE 8000
 
-EXPOSE 8080
-
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
