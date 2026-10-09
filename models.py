@@ -1,12 +1,25 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from database import Base
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(String, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+
+    companies = relationship("CompanyDossier", back_populates="owner", cascade="all, delete-orphan")
 
 class CompanyDossier(Base):
     __tablename__ = "company_dossier"
     
     id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     legal_name = Column(String, nullable=False)
     dba = Column(String)
     entity_type = Column(String, default='LLC')
@@ -32,6 +45,7 @@ class CompanyDossier(Base):
     current_unlocked_tier = Column(Integer, default=1)
     created_at = Column(String, default=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 
+    owner = relationship("User", back_populates="companies")
     tradelines = relationship("Tradeline", back_populates="company", cascade="all, delete-orphan")
 
 class Vendor(Base):
