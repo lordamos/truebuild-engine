@@ -1,14 +1,17 @@
 import sqlite3
 import random
+import json
+import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from playwright.async_api import async_playwright
 
 DB_NAME = "truebuild_advanced.db"
 
-app = FastAPI(title="TrueBuild Autonomous Credit Engine", version="3.0.0")
+app = FastAPI(title="TrueBuild Autonomous Credit Engine", version="4.0.0")
 
 # --- Database Schema & Enhanced Vendor Matrix ---
 def init_db():
@@ -159,9 +162,7 @@ def compute_metrics(company_id: int):
         records = cursor.fetchall()
         
         if not records:
-            paydex = None
-            experian = None
-            equifax = None
+            paydex, experian, equifax = None, None, None
         else:
             dnb_scores, exp_scores, eq_scores = [], [], []
             for (delta, reports_to) in records:
@@ -199,11 +200,8 @@ def compute_metrics(company_id: int):
         conn.commit()
         
         return {
-            "paydex": paydex,
-            "experian": experian,
-            "equifax": equifax,
-            "unlocked_tier": unlocked,
-            "total_credit": total_credit,
+            "paydex": paydex, "experian": experian, "equifax": equifax,
+            "unlocked_tier": unlocked, "total_credit": total_credit,
             "t1_count": t1, "t2_count": t2, "t3_count": t3
         }
 
@@ -270,7 +268,90 @@ def generate_autofill_dossier(company_id: int) -> Dict[str, Any]:
             }
         }
 
+# --- Browser Automation Engine (Playwright) ---
+async def browser_autofill_worker(company_id: int, vendor_id: int):
+    # Fetch vendor info
+    with sqlite3.connect(DB_NAME) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT application_url FROM vendors WHERE id = ?", (vendor_id,))
+        row = cursor.fetchone()
+        if not row: return
+        url = row[0]
+        
+    dossier = generate_autofill_dossier(company_id)
+    
+    # Launch Playwright visibly
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=False)
+        context = await browser.new_context()
+        page = await context.new_page()
+        
+        print(f"Navigating to {url}...")
+        await page.goto(url, timeout=60000)
+        
+        # Inject our heuristic Javascript auto-filler into the page
+        js_code = f"""
+        (function() {{
+            const data = {json.dumps(dossier)};
+            
+            function fillInput(keywords, value) {{
+                if (!value) return;
+                const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea');
+                for (let input of inputs) {{
+                    const name = (input.name || '').toLowerCase();
+                    const id = (input.id || '').toLowerCase();
+                    const placeholder = (input.placeholder || '').toLowerCase();
+                    
+                    if (keywords.some(k => name.includes(k) || id.includes(k) || placeholder.includes(k))) {{
+                        // Don't overwrite if we already heuristic-filled it
+                        if (input.dataset.autofilled) continue;
+                        
+                        input.value = value;
+                        input.dataset.autofilled = 'true';
+                        input.style.border = '2px solid #10b981';
+                        input.style.backgroundColor = '#ecfdf5';
+                        
+                        input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }}
+                }}
+            }}
+            
+            // Execute heuristic mappings
+            setTimeout(() => {{
+                fillInput(['company', 'business', 'legal'], data.company_profile.LegalBusinessName);
+                fillInput(['ein', 'tax', 'fein', 'federal'], data.company_profile.FederalTaxID_EIN);
+                fillInput(['address', 'street', 'line1'], data.contact_and_location.BusinessAddress);
+                fillInput(['city'], data.contact_and_location.City);
+                fillInput(['zip', 'postal'], data.contact_and_location.ZipCode);
+                fillInput(['phone', 'mobile'], data.contact_and_location.PrimaryPhone);
+                fillInput(['email'], data.contact_and_location.PrimaryEmail);
+                fillInput(['first', 'officer', 'name', 'applicant'], data.authorized_officer.OfficerFullName);
+                fillInput(['title', 'role'], data.authorized_officer.Title);
+            }}, 2000); // Wait 2s for React/Vue frames to settle
+        }})();
+        """
+        
+        # We wrap in try-except so it doesn't crash if the site blocks evaluate
+        try:
+            await page.evaluate(js_code)
+            print("Autofill payload injected successfully!")
+        except Exception as e:
+            print(f"Could not inject JS autofill: {e}")
+            
+        # Keep the browser open until the user manually closes it or submits the form
+        try:
+            await page.wait_for_event("close", timeout=0)
+        except Exception:
+            pass
+            
 # --- REST API Endpoints ---
+@app.post("/api/engine/launch-autofill/{company_id}/{vendor_id}")
+async def launch_autofill(company_id: int, vendor_id: int, background_tasks: BackgroundTasks):
+    """Triggers the Playwright background bot to visibly open the vendor portal and inject form data."""
+    background_tasks.add_task(browser_autofill_worker, company_id, vendor_id)
+    return {"status": "Browser Launched", "message": "Playwright is opening the application portal and attempting smart autofill."}
+
 @app.get("/api/engine/dashboard/{company_id}")
 def get_dashboard(company_id: int):
     return {
@@ -382,13 +463,13 @@ def serve_dashboard():
         <aside class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col hidden md:flex">
             <div class="p-6 border-b border-slate-800">
                 <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                    <i class="fa-solid fa-building-columns text-emerald-400"></i> TrueBuild V3
+                    <i class="fa-solid fa-robot text-sky-400"></i> TrueBuild V4.0
                 </h1>
-                <p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">Automated Credit Engine</p>
+                <p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">With Browser Auto-Fill</p>
             </div>
             <nav class="flex-1 p-4 space-y-2">
                 <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3">
-                    <i class="fa-solid fa-chart-line w-4"></i> Control Center
+                    <i class="fa-solid fa-rocket w-4"></i> Auto-Fill Engine
                 </button>
                 <button onclick="switchTab('portfolio')" id="tab-portfolio" class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3">
                     <i class="fa-solid fa-wallet w-4"></i> Credit Portfolio
@@ -431,7 +512,7 @@ def serve_dashboard():
 
             <!-- VIEW: DASHBOARD -->
             <div id="view-dashboard" class="view-section active space-y-6">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
                     <!-- Action Engine -->
                     <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
                         <div class="flex justify-between items-start mb-4">
@@ -446,17 +527,24 @@ def serve_dashboard():
                                 <div class="flex justify-between"><span class="text-slate-500">Min Invoice:</span><span id="target-min">--</span></div>
                                 <div class="flex justify-between"><span class="text-slate-500">PG Required:</span><span id="target-pg">--</span></div>
                             </div>
-                            <div class="mt-6 flex gap-3">
-                                <a id="btn-apply" href="#" target="_blank" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-center py-2 rounded font-medium transition">Open Portal <i class="fa-solid fa-external-link-alt text-xs ml-1"></i></a>
-                                <button onclick="markApplied()" class="flex-1 border border-slate-700 hover:bg-slate-800 rounded font-medium transition">Mark Applied</button>
+                            
+                            <!-- BROWSER AUTOMATION CTA -->
+                            <div class="mt-6 flex flex-col gap-3">
+                                <button onclick="launchBrowserBot()" id="btn-bot" class="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white shadow-lg text-center py-3 rounded-lg font-bold text-lg transition flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-robot"></i> Launch Browser Auto-Fill Bot
+                                </button>
+                                <div class="flex gap-3">
+                                    <a id="btn-apply" href="#" target="_blank" class="flex-1 bg-slate-800 hover:bg-slate-700 text-center py-2.5 rounded-lg font-medium text-sm transition">Manual Open Portal</a>
+                                    <button onclick="markApplied()" class="flex-1 border border-slate-700 hover:bg-slate-800 rounded-lg font-medium text-sm transition">Mark Applied</button>
+                                </div>
                             </div>
                         </div>
                     </div>
                     <!-- Autofill -->
                     <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col">
                         <div class="flex justify-between items-center mb-4">
-                            <h3 class="text-lg font-bold"><i class="fa-solid fa-clipboard text-sky-400 mr-2"></i> Autofill Dossier</h3>
-                            <button onclick="copyAutofill()" class="text-xs bg-sky-600 hover:bg-sky-500 px-3 py-1.5 rounded transition">Copy JSON</button>
+                            <h3 class="text-lg font-bold"><i class="fa-solid fa-clipboard text-emerald-400 mr-2"></i> Dossier Payload</h3>
+                            <button onclick="copyAutofill()" class="text-xs bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded transition">Copy JSON</button>
                         </div>
                         <pre id="autofill-box" class="bg-slate-950 text-emerald-400 p-4 rounded-lg text-xs font-mono overflow-auto flex-1 border border-slate-800">{}</pre>
                     </div>
@@ -519,18 +607,15 @@ def serve_dashboard():
             async function loadAllData() {
                 const cid = document.getElementById('cid').value;
                 
-                // Dashboard
                 const dashRes = await fetch(`/api/engine/dashboard/${cid}`);
                 const dash = await dashRes.json();
                 
-                // Update Metrics
                 const m = dash.metrics;
                 document.getElementById('m-paydex').innerText = m.paydex || 'N/A';
                 document.getElementById('m-experian').innerText = m.experian || 'N/A';
                 document.getElementById('m-equifax').innerText = m.equifax || 'N/A';
                 document.getElementById('m-credit').innerText = `$${m.total_credit.toLocaleString()}`;
                 
-                // Update Target
                 const t = dash.target_vendor;
                 currentTarget = t ? t.vendor_id : null;
                 if(t) {
@@ -550,7 +635,6 @@ def serve_dashboard():
                 autofillData = JSON.stringify(dash.autofill_payload, null, 2);
                 document.getElementById('autofill-box').innerText = autofillData;
 
-                // Portfolio
                 const portRes = await fetch(`/api/portfolio/${cid}`);
                 const port = await portRes.json();
                 
@@ -578,7 +662,6 @@ def serve_dashboard():
                     </div>
                 `).join('');
 
-                // Matrix
                 const mxRes = await fetch(`/api/vendors/matrix/${cid}`);
                 const mx = await mxRes.json();
                 
@@ -609,6 +692,25 @@ def serve_dashboard():
                     body: JSON.stringify({ vendor_id: currentTarget, account_number: "AUTO-"+Date.now(), credit_limit: 500 })
                 });
                 loadAllData();
+            }
+
+            async function launchBrowserBot() {
+                if(!currentTarget) return;
+                const cid = document.getElementById('cid').value;
+                const btn = document.getElementById('btn-bot');
+                const origHtml = btn.innerHTML;
+                
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Spawning Playwright Bot...';
+                
+                try {
+                    const res = await fetch(`/api/engine/launch-autofill/${cid}/${currentTarget}`, {method: 'POST'});
+                    const data = await res.json();
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Browser Launched!';
+                    setTimeout(() => { btn.innerHTML = origHtml; }, 3000);
+                } catch(e) {
+                    btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Error launching';
+                    setTimeout(() => { btn.innerHTML = origHtml; }, 3000);
+                }
             }
 
             async function simulateMonth() {
