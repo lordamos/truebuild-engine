@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy.orm import Session
@@ -265,6 +265,97 @@ async def launch_autofill(company_id: int, vendor_id: int, background_tasks: Bac
     background_tasks.add_task(browser_autofill_worker, company_id, vendor_id)
     return {"status": "Browser Launched"}
 
+
+@app.get("/api/engine/generate-invoice/{payment_id}")
+async def generate_invoice_pdf(payment_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    payment = db.query(PaymentRecord).filter(PaymentRecord.id == payment_id).first()
+    if not payment: raise HTTPException(status_code=404, detail="Payment not found")
+    
+    tradeline = db.query(Tradeline).filter(Tradeline.id == payment.tradeline_id).first()
+    co = db.query(CompanyDossier).filter(CompanyDossier.id == tradeline.company_id, CompanyDossier.owner_id == current_user.id).first()
+    if not co: raise HTTPException(status_code=403, detail="Access denied")
+    
+    vendor = db.query(Vendor).filter(Vendor.id == tradeline.vendor_id).first()
+
+    html = f'''
+    <!DOCTYPE html>
+    <html>
+    <head><script src="https://cdn.tailwindcss.com"></script></head>
+    <body class="p-12 font-sans bg-white text-slate-800">
+        <div class="max-w-4xl mx-auto border border-slate-200 p-10 rounded-xl shadow-sm">
+            <div class="flex justify-between items-start mb-12 border-b border-slate-200 pb-8">
+                <div>
+                    <h1 class="text-4xl font-black text-slate-900 tracking-tight mb-2">{vendor.name.upper()}</h1>
+                    <p class="text-sm text-slate-500 font-medium">Commercial Account / Net-30 Terms</p>
+                    <p class="text-xs text-slate-400 mt-1">Vendor ID: {vendor.id} | Tier {vendor.tier}</p>
+                </div>
+                <div class="text-right">
+                    <h2 class="text-3xl font-bold text-slate-300 uppercase tracking-widest">INVOICE</h2>
+                    <p class="font-bold text-lg mt-2 text-slate-700">#{payment.invoice_number}</p>
+                    <p class="text-sm text-slate-500 mt-1">Issue Date: {payment.invoice_date}</p>
+                    <p class="text-sm text-slate-500 font-bold text-emerald-600">Paid Date: {payment.paid_date}</p>
+                </div>
+            </div>
+            
+            <div class="flex justify-between mb-12">
+                <div class="w-1/2">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Billed To</h3>
+                    <p class="font-bold text-lg text-slate-800">{co.legal_name}</p>
+                    <p class="text-sm text-slate-600">{co.physical_address}</p>
+                    <p class="text-sm text-slate-600">{co.city}, {co.state} {co.zip_code}</p>
+                    <p class="text-sm text-slate-600 mt-2">EIN: {co.ein}</p>
+                </div>
+                <div class="w-1/3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                    <div class="flex justify-between mb-2"><span class="text-sm text-slate-500">Account #</span><span class="font-medium">{tradeline.account_number}</span></div>
+                    <div class="flex justify-between mb-2"><span class="text-sm text-slate-500">Credit Limit</span><span class="font-medium">${tradeline.credit_limit:,.2f}</span></div>
+                    <div class="flex justify-between font-bold text-emerald-600 pt-2 border-t border-slate-200"><span class="text-sm">Status</span><span>PAID IN FULL</span></div>
+                </div>
+            </div>
+
+            <table class="w-full text-left mb-12">
+                <thead>
+                    <tr class="border-b-2 border-slate-800 text-slate-600 text-sm">
+                        <th class="py-3 font-bold uppercase tracking-wider">Description</th>
+                        <th class="py-3 font-bold uppercase tracking-wider text-right">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="border-b border-slate-200">
+                        <td class="py-4 text-slate-700">{vendor.category} - Commercial Purchase</td>
+                        <td class="py-4 text-right font-medium text-slate-800">${payment.invoice_amount:,.2f}</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div class="flex justify-end mb-16">
+                <div class="w-1/3">
+                    <div class="flex justify-between font-bold text-xl py-3 border-t-2 border-slate-800">
+                        <span>Total Paid</span>
+                        <span>${payment.invoice_amount:,.2f}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center text-xs text-slate-400 mt-16 pt-8 border-t border-slate-200">
+                <p>This invoice is electronically generated and serves as proof of commercial payment.</p>
+                <p>Reported to: {vendor.reports_to}</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    '''
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.set_content(html)
+        pdf_bytes = await page.pdf(format="Letter", print_background=True, margin={"top": "0.5in", "bottom": "0.5in", "left": "0.5in", "right": "0.5in"})
+        await browser.close()
+        
+    safe_name = vendor.name.replace(" ", "_").replace("/", "_")
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{safe_name}_Invoice_{payment.invoice_number}.pdf"'})
+
+
 @app.get("/api/engine/dashboard/{company_id}")
 def get_dashboard(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     co = db.query(CompanyDossier).filter(CompanyDossier.id == company_id, CompanyDossier.owner_id == current_user.id).first()
@@ -278,7 +369,7 @@ def get_portfolio(company_id: int, current_user: User = Depends(get_current_user
     tls = db.query(Tradeline, Vendor).join(Vendor).filter(Tradeline.company_id == company_id).order_by(Vendor.tier).all()
     t_list = [{"id": t.id, "vendor": v.name, "tier": v.tier, "limit": t.credit_limit, "opened": t.opened_date, "account": t.account_number, "reports_to": v.reports_to} for t, v in tls]
     pmts = db.query(PaymentRecord, Tradeline, Vendor).join(Tradeline).join(Vendor).filter(Tradeline.company_id == company_id).order_by(PaymentRecord.paid_date.desc()).limit(10).all()
-    p_list = [{"invoice": p.invoice_number, "amount": p.invoice_amount, "paid_date": p.paid_date, "early_days": abs(p.days_relative_to_due) if p.days_relative_to_due < 0 else 0, "vendor": v.name} for p, t, v in pmts]
+    p_list = [{"id": p.id, "invoice": p.invoice_number, "amount": p.invoice_amount, "paid_date": p.paid_date, "early_days": abs(p.days_relative_to_due) if p.days_relative_to_due < 0 else 0, "vendor": v.name} for p, t, v in pmts]
     return {"tradelines": t_list, "recent_payments": p_list, "metrics": compute_metrics(db, company_id)}
 
 @app.get("/api/vendors/matrix/{company_id}")
@@ -599,7 +690,22 @@ def serve_dashboard():
 
     const port = await apiFetch(`/api/portfolio/${COMPANY_ID}`);
     document.getElementById('tradelines-table').innerHTML = port.tradelines.map(tr => `<tr class="hover:bg-slate-800/30"><td class="px-4 py-3 font-medium text-white">${tr.vendor}</td><td class="px-4 py-3"><span class="bg-slate-800 px-2 py-0.5 rounded text-xs">Tier ${tr.tier}</span></td><td class="px-4 py-3 text-emerald-400">$${tr.limit.toLocaleString()}</td><td class="px-4 py-3 text-xs text-slate-400">${tr.reports_to}</td></tr>`).join('');
-    document.getElementById('payments-list').innerHTML = port.recent_payments.map(p => `<div class="flex justify-between items-center p-3 bg-slate-950 rounded border border-slate-800"><div><p class="text-sm font-bold text-white">${p.vendor}</p><p class="text-xs text-slate-500">${p.invoice}</p></div><div class="text-right"><p class="text-sm text-emerald-400">$${p.amount.toFixed(2)}</p><p class="text-xs text-sky-400">${p.early_days}d early</p></div></div>`).join('');
+    
+document.getElementById('payments-list').innerHTML = port.recent_payments.map(p => `
+    <div class="flex justify-between items-center p-3 bg-slate-950 rounded border border-slate-800">
+        <div>
+            <p class="text-sm font-bold text-white">${p.vendor}</p>
+            <p class="text-xs text-slate-500">${p.invoice}</p>
+        </div>
+        <div class="text-right flex items-center gap-4">
+            <div>
+                <p class="text-sm text-emerald-400">$${p.amount.toFixed(2)}</p>
+                <p class="text-xs text-sky-400">${p.early_days}d early</p>
+            </div>
+            <button onclick="downloadInvoice(${p.id})" title="Download PDF Invoice" class="text-slate-400 hover:text-indigo-400 transition"><i class="fa-solid fa-file-pdf text-xl"></i></button>
+        </div>
+    </div>`).join('');
+
 
     const mx = await apiFetch(`/api/vendors/matrix/${COMPANY_ID}`);
     document.getElementById('matrix-grid').innerHTML = mx.vendors.map(v => `<div class="p-4 rounded-xl border relative overflow-hidden ${v.applied ? 'bg-emerald-950/20 border-emerald-900/50' : v.locked ? 'bg-slate-950 border-slate-800 opacity-50' : 'bg-slate-900 border-slate-700'}">${v.locked ? '<div class="absolute inset-0 flex items-center justify-center z-10 backdrop-blur-[1px]"><i class="fa-solid fa-lock text-3xl text-slate-700"></i></div>' : ''}${v.applied ? '<div class="absolute top-3 right-3 text-emerald-500"><i class="fa-solid fa-circle-check"></i></div>' : ''}<span class="text-[10px] uppercase font-bold text-slate-500">Tier ${v.tier}</span><h4 class="font-bold text-white mt-1">${v.name}</h4><p class="text-xs text-slate-400 mt-1">${v.category}</p><div class="mt-3 flex flex-wrap gap-1">${v.reports_to.split(',').map(r => `<span class="px-2 py-0.5 bg-slate-800 text-[10px] rounded text-slate-300">${r.trim()}</span>`).join('')}</div></div>`).join('');
@@ -618,6 +724,24 @@ def serve_dashboard():
     if (!currentTargetId) return;
     await apiFetch(`/api/tradelines/link/${COMPANY_ID}`, { method: 'POST', body: JSON.stringify({ vendor_id: currentTargetId, account_number: 'APPLIED-' + Date.now(), credit_limit: 500 }) });
     loadAllData();
+  }
+
+  
+  async function downloadInvoice(pid) {
+    try {
+      const res = await fetch(`/api/engine/generate-invoice/${pid}`, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+      if (!res.ok) throw new Error('Failed to generate PDF');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const cd = res.headers.get('content-disposition');
+      a.download = cd ? cd.split('filename="')[1].split('"')[0] : `Invoice_${pid}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch(e) { alert(e.message); }
   }
 
   function copyDossier() { navigator.clipboard.writeText(dossierJson); alert('Copied!'); }
