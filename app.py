@@ -513,7 +513,12 @@ def serve_dashboard():
     try {
       const form = new URLSearchParams({ username: email, password: pass });
       const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form });
-      if (!res.ok) { const e = await res.json(); errEl.textContent = e.detail; errEl.classList.remove('hidden'); return; }
+      if (!res.ok) { 
+        const e = await res.json(); 
+        errEl.textContent = Array.isArray(e.detail) ? e.detail[0].msg : e.detail; 
+        errEl.classList.remove('hidden'); 
+        return; 
+      }
       const data = await res.json();
       TOKEN = data.access_token; localStorage.setItem('tb_token', TOKEN);
       if (data.company_id) { COMPANY_ID = data.company_id; localStorage.setItem('tb_company_id', COMPANY_ID); showApp(data); }
@@ -526,7 +531,12 @@ def serve_dashboard():
     const payload = { full_name: document.getElementById('r-name').value, email: document.getElementById('r-email').value, password: document.getElementById('r-pass').value };
     try {
       const res = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!res.ok) { const e = await res.json(); errEl.textContent = e.detail; errEl.classList.remove('hidden'); return; }
+      if (!res.ok) { 
+        const e = await res.json(); 
+        errEl.textContent = Array.isArray(e.detail) ? e.detail[0].msg : e.detail; 
+        errEl.classList.remove('hidden'); 
+        return; 
+      }
       const data = await res.json();
       TOKEN = data.access_token; localStorage.setItem('tb_token', TOKEN);
       hideAll(); document.getElementById('setup-gate').classList.remove('hidden');
@@ -548,7 +558,11 @@ def serve_dashboard():
 
   async function apiFetch(url, opts={}) {
     const res = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}`, ...(opts.headers||{}) } });
-    if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Request failed'); }
+    if (!res.ok) { 
+        const e = await res.json(); 
+        const msg = Array.isArray(e.detail) ? e.detail[0].msg : (e.detail || 'Request failed');
+        throw new Error(msg); 
+    }
     return res.json();
   }
 
