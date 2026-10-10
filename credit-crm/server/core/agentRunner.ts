@@ -267,9 +267,7 @@ ${utilization > 30 ? '✅ **Execute AZEO immediately** — this is your fastest 
 // ── Agent 4: FCRA Dispute Letter Factory ─────────────────────
 function runDisputeLetterFactory(client: Client, profile: CreditProfile): AgentResult {
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  const disputeItems = profile.negativeItems.filter(i =>
-    i.disputeStrategy === 'FORMAL_FCRA' || i.disputeStrategy === 'DEBT_VALIDATION'
-  );
+  const disputeItems = profile.negativeItems.filter(i => i.type !== 'INQUIRY');
 
   const letters: DisputeLetter[] = [];
 

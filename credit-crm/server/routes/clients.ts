@@ -167,6 +167,12 @@ clientRouter.post('/:id/run-agents', async (req, res) => {
   client.agentOutputs = { ...client.agentOutputs, ...outputs };
   client.disputes = [...client.disputes, ...newDisputes];
   client.stage = 'DOCS_VERIFIED';
+  
+  if (newDisputes.length > 0) {
+    const entry = await dispatchEmail(client, 'LETTERS_READY');
+    client.emailLog.push(entry);
+  }
+  
   saveClient(client);
   res.json({ success: true, data: client });
 });
@@ -275,6 +281,12 @@ clientRouter.post('/:id/parse-and-run', async (req, res) => {
   client.agentOutputs = { ...client.agentOutputs, ...outputs };
   client.disputes = [...(client.disputes ?? []), ...newDisputes];
   if (client.stage === 'NEW') client.stage = 'DOCS_VERIFIED';
+  
+  if (newDisputes.length > 0) {
+    const entry = await dispatchEmail(client, 'LETTERS_READY');
+    client.emailLog.push(entry);
+  }
+  
   saveClient(client);
 
   res.json({

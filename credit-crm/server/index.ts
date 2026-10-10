@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { clientRouter } from './routes/clients.js';
 import { settingsRouter } from './routes/settings.js';
 import { getAllClients, saveClient } from './core/dataStore.js';
-import { getClientsNeedingOverdueAlert, getClientsNeedingPostCare, dispatchEmail } from './core/emailScheduler.js';
+import { getClientsNeedingOverdueAlert, getClientsNeedingPostCare, getClientsNeeding30DayFollowup, dispatchEmail } from './core/emailScheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,6 +43,7 @@ app.listen(PORT, () => {
       const clients = getAllClients();
       const overdue = getClientsNeedingOverdueAlert(clients);
       const postCare = getClientsNeedingPostCare(clients);
+      const followUp30 = getClientsNeeding30DayFollowup(clients);
       for (const client of overdue) {
         const entry = await dispatchEmail(client, 'OVERDUE_48H');
         client.emailLog.push(entry);
@@ -55,6 +56,12 @@ app.listen(PORT, () => {
         client.emailLog.push(entry);
         saveClient(client);
         console.log(`[Scheduler] ✉️ Post-care email sent -> ${client.email}`);
+      }
+      for (const client of followUp30) {
+        const entry = await dispatchEmail(client, 'DISPUTE_30DAY_FOLLOWUP');
+        client.emailLog.push(entry);
+        saveClient(client);
+        console.log(`[Scheduler] ✉️ 30-Day Follow-Up email sent -> ${client.email}`);
       }
     } catch (err: any) {
       console.error('[Scheduler] Error:', err.message);

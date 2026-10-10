@@ -65,7 +65,9 @@ export type EmailStage =
   | 'APPROVED'
   | 'PAYMENT_CONFIRMED'
   | 'OVERDUE_48H'
-  | 'POST_CARE_45DAY';
+  | 'POST_CARE_45DAY'
+  | 'LETTERS_READY'
+  | 'DISPUTE_30DAY_FOLLOWUP';
 
 export interface EmailLogEntry {
   id: string;
