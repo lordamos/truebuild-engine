@@ -8,3 +8,16 @@ services:
     envVars:
       - key: PORT
         value: 10000
+
+  - type: web
+    name: credit-acceleration-crm
+    env: node
+    region: ohio
+    plan: free
+    rootDir: credit-crm
+    buildCommand: npm install && npm run build
+    startCommand: npm run server
+    envVars:
+      - key: PORT
+        value: 10000
+

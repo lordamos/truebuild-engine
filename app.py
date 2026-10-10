@@ -503,6 +503,7 @@ def serve_dashboard():
     </div>
     <nav class="flex-1 p-4 space-y-1">
       <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-rocket w-4"></i> Auto-Fill Engine</button>
+      <a href="http://localhost:3002" target="_blank" class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-emerald-400 hover:text-emerald-300 transition flex items-center gap-3 mt-8"><i class="fa-solid fa-users-viewfinder w-4"></i> Personal Credit CRM <i class="fa-solid fa-arrow-up-right-from-square text-xs ml-auto"></i></a>
       <button onclick="switchTab('portfolio')" id="tab-portfolio" class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-wallet w-4"></i> Credit Portfolio</button>
       <button onclick="switchTab('admin')" id="tab-admin" class="tab-btn hidden w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-shield-halved w-4"></i> Admin Panel</button>
       <button onclick="switchTab('matrix')" id="tab-matrix" class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-sitemap w-4"></i> Vendor Matrix</button>
