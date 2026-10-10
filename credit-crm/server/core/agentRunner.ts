@@ -480,60 +480,92 @@ ${letters.map((l, i) => `${i + 1}. **${l.creditor}** — Goodwill request for la
 // ── Agent 6: Inquiry Minimizer ────────────────────────────────
 function runInquiryMinimizer(client: Client, profile: CreditProfile): AgentResult {
   const inquiries = profile.negativeItems.filter(i => i.type === 'INQUIRY');
-  const output = `# 🛡️ Hard Inquiry Minimizer & Smart Application Strategy
+  
+  // Find accounts attached to these inquiries
+  const accountCreditors = new Set([
+    ...profile.debtAccounts.map(d => d.creditor.toLowerCase()),
+    ...profile.negativeItems.filter(n => n.type !== 'INQUIRY').map(n => n.creditor.toLowerCase())
+  ]);
+
+  const unattachedInquiries = inquiries.filter(i => {
+    return !Array.from(accountCreditors).some(ac => ac.includes(i.creditor.toLowerCase()) || i.creditor.toLowerCase().includes(ac));
+  });
+
+  const attachedInquiries = inquiries.filter(i => !unattachedInquiries.includes(i));
+
+  const letters: DisputeLetter[] = unattachedInquiries.map(inq => ({
+    id: uuidv4(),
+    clientId: client.id,
+    type: 'FCRA_FORMAL_DISPUTE',
+    bureau: inq.bureau as any,
+    creditor: inq.creditor,
+    status: 'DRAFT',
+    createdAt: new Date().toISOString(),
+    content: `[Your Name]
+[Your Address]
+[City, State, Zip]
+
+Date: ${new Date().toLocaleDateString()}
+
+To: ${inq.bureau} Credit Bureau
+
+Subject: Dispute of Unauthorized Hard Inquiry - FCRA Section 604 Violation
+
+To Whom It May Concern,
+
+I am writing to formally dispute a hard inquiry on my credit report from ${inq.creditor} dated ${inq.dateOpened || 'Unknown Date'}. I have no open or closed account with this institution, nor did I apply for credit or provide permissible purpose under Section 604 of the Fair Credit Reporting Act (FCRA).
+
+Please provide proof of signed authorization bearing my physical signature. If you cannot produce this documentation within 30 days, as required by law, this inquiry must be permanently removed from my credit file.
+
+Thank you,
+
+${client.firstName} ${client.lastName}`
+  }));
+
+  const output = `# 🕵️ Hard Inquiry Minimizer & Smart Application Strategy
 **Total Inquiries Found:** ${inquiries.length}
-**High Risk Threshold:** 4+ inquiries (you are ${(profile.numberOfInquiries ?? 0) >= 4 ? '⚠️ ABOVE' : '✅ BELOW'} this threshold)
+**Unattached Inquiries (Disputable):** ${unattachedInquiries.length}
 
 ---
 
-## Understanding Hard Inquiries
-- Hard inquiries remain on your credit report for **24 months**.
-- They only impact your score for **12 months**.
-- After **12 months**, they are visible but score-neutral.
-- The average single inquiry costs **5 to 15 points**.
-- Multiple inquiries in a short window for the same type of credit (mortgage, auto) are typically "deduplicated" by scoring models within a **14–45 day window** and count as a single inquiry.
+## 🚨 Unattached Inquiries Detected
+*The following inquiries do not match any open or closed accounts on your profile. Under FCRA §604, inquiries without a permissible purpose or an associated account application are highly disputable and must be removed if the creditor cannot prove authorization.*
+
+${unattachedInquiries.length === 0 ? '✅ Excellent. No unattached inquiries found.' : unattachedInquiries.map(i => `- **${i.creditor}** (${i.bureau}) - ${i.dateOpened ?? 'Date unknown'} 🛑 **FLAGGED FOR DISPUTE**`).join('\\n')}
 
 ---
 
-## Inquiries Found on Your File
-${inquiries.length === 0 ? '✅ No hard inquiries detected or identified.' : inquiries.map(i => `- **${i.creditor}** (${i.bureau}) — ${i.dateOpened ?? 'Date unknown'}`).join('\n')}
+## 📎 Attached Inquiries
+*These inquiries correspond to existing accounts on your file. Disputing them is generally unsuccessful and could risk the associated account being closed.*
+
+${attachedInquiries.length === 0 ? '*None.*' : attachedInquiries.map(i => `- **${i.creditor}** (${i.bureau}) - ${i.dateOpened ?? 'Date unknown'}`).join('\\n')}
 
 ---
 
-## Dispute Unauthorized Inquiries
-If you did not authorize any of the above inquiries, you have the right to dispute them:
-
-### How to Dispute Unauthorized Inquiries:
-1. Send a letter to each bureau where the unauthorized inquiry appears.
-2. State: "I did not authorize this inquiry. Please provide the signed authorization form or remove this inquiry immediately."
-3. Under FCRA §604, only permissible-purpose inquiries may appear on your file.
-4. Unauthorized inquiries must be removed if the creditor cannot produce a signed authorization.
+## ⚖️ Dispute Unauthorized Inquiries
+We have automatically generated **${letters.length} FCRA §604 Dispute Letter(s)** for your unattached inquiries. 
+These are available in your Letters tab and demand proof of signed authorization.
 
 ---
 
 ## Future Application Strategy (Rate Shopping Protection)
-### The 14–45 Day Rate Shopping Window
-- When shopping for a mortgage, auto loan, or student loan — apply to ALL lenders within a **14-day window**.
+### The 14-45 Day Rate Shopping Window
+- When shopping for a mortgage, auto loan, or student loan - apply to ALL lenders within a **14-day window**.
 - FICO 8 and VantageScore 3.0/4.0 will count these as **1 inquiry** instead of multiple.
 - For credit cards, each application IS a separate inquiry (no bundling).
 
 ### The Application Pre-Qualification Hack
 - ALWAYS use lenders' pre-qualification tools (soft pull only) before formally applying.
 - Pre-qualifications are NOT hard inquiries and show you your likely approval odds risk-free.
-- Only submit a formal application when you have strong pre-qualification confidence.
-
-### Priority Application Timing (After Dispute Phase)
-1. Wait until disputed negative items are deleted (typically 30–45 days).
-2. Run the AZEO strategy to maximize utilization score.
-3. Allow 48–72 hours after AZEO for scores to update.
-4. Apply within a tight 72-hour window for maximum score snapshot.`;
+`;
 
   return {
     agentId: 'INQUIRY_MINIMIZER',
     status: 'COMPLETE',
-    title: 'Hard Inquiry Minimizer',
+    title: 'Inquiry Minimizer & Disputer',
     output,
     generatedAt: new Date().toISOString(),
+    letters: letters.length > 0 ? letters : undefined
   };
 }
 
