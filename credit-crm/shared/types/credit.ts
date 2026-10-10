@@ -224,4 +224,6 @@ export const EMAIL_STAGE_META: Record<EmailStage, { subject: string; trigger: st
   PAYMENT_CONFIRMED: { subject: 'Payment Confirmed: Card Activation & 1% Utilization Guide', trigger: 'On payment received', icon: '💳' },
   OVERDUE_48H: { subject: 'URGENT NOTICE: Outstanding Success Fee – Action Required', trigger: '48hrs after approval if unpaid', icon: '⚠️' },
   POST_CARE_45DAY: { subject: '45-Day Check-In: Scaling Your Lines to $50,000+', trigger: '45 days after payment', icon: '🚀' },
+  LETTERS_READY: { subject: 'Action Required', trigger: 'On gen', icon: 'x' },
+  DISPUTE_30DAY_FOLLOWUP: { subject: '30 days', trigger: '30 days', icon: 'x' },
 };
