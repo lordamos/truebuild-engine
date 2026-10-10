@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field, EmailStr
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 from playwright.async_api import async_playwright
 
 from database import engine, Base, get_db, SessionLocal
@@ -28,6 +28,12 @@ app = FastAPI(title="TrueBuild Autonomous Credit Engine", version="6.0.0")
 def startup_event():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;"))
+        db.commit()
+    except Exception:
+        db.rollback()
+    
     try:
         if db.query(Vendor).count() == 0:
             seeds = [
@@ -114,7 +120,7 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
 @app.get("/api/auth/me")
 def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     company = db.query(CompanyDossier).filter(CompanyDossier.owner_id == current_user.id).first()
-    return {"user_id": current_user.id, "full_name": current_user.full_name, "email": current_user.email, "company_id": company.id if company else None}
+    return {"user_id": current_user.id, "full_name": current_user.full_name, "email": current_user.email, "company_id": company.id if company else None, "is_admin": current_user.is_admin}
 
 # ---------------------------------------------------------------------------
 # Company Management
@@ -280,7 +286,8 @@ async def generate_invoice_pdf(payment_id: int, current_user: User = Depends(get
     html = f'''
     <!DOCTYPE html>
     <html>
-    <head><script src="https://cdn.tailwindcss.com"></script></head>
+    <head><script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script></head>
     <body class="p-12 font-sans bg-white text-slate-800">
         <div class="max-w-4xl mx-auto border border-slate-200 p-10 rounded-xl shadow-sm">
             <div class="flex justify-between items-start mb-12 border-b border-slate-200 pb-8">
@@ -360,7 +367,8 @@ async def generate_invoice_pdf(payment_id: int, current_user: User = Depends(get
 def get_dashboard(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     co = db.query(CompanyDossier).filter(CompanyDossier.id == company_id, CompanyDossier.owner_id == current_user.id).first()
     if not co: raise HTTPException(status_code=403, detail="Access denied.")
-    return {"metrics": compute_metrics(db, company_id), "target_vendor": recommend_next_vendor(db, company_id), "autofill_payload": generate_autofill(db, company_id)}
+    metrics = compute_metrics(db, company_id)
+    return {"metrics": metrics, "target_vendor": recommend_next_vendor(db, company_id), "autofill_payload": generate_autofill(db, company_id), "fundability": get_fundability(co), "chart_data": get_chart_data(metrics)}
 
 @app.get("/api/portfolio/{company_id}")
 def get_portfolio(company_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -414,6 +422,7 @@ def serve_dashboard():
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TrueBuild | Corporate Credit Engine</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
   .tab-btn.active{background-color:#0f172a;color:#10b981;border-left:3px solid #10b981}
@@ -495,6 +504,7 @@ def serve_dashboard():
     <nav class="flex-1 p-4 space-y-1">
       <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn active w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-rocket w-4"></i> Auto-Fill Engine</button>
       <button onclick="switchTab('portfolio')" id="tab-portfolio" class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-wallet w-4"></i> Credit Portfolio</button>
+      <button onclick="switchTab('admin')" id="tab-admin" class="tab-btn hidden w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-shield-halved w-4"></i> Admin Panel</button>
       <button onclick="switchTab('matrix')" id="tab-matrix" class="tab-btn w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition flex items-center gap-3"><i class="fa-solid fa-sitemap w-4"></i> Vendor Matrix</button>
     </nav>
     <div class="p-4 border-t border-slate-800">
@@ -512,7 +522,23 @@ def serve_dashboard():
 
     <!-- Dashboard Tab -->
     <div id="view-dashboard" class="view-section active space-y-6">
-      <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      
+        <!-- Top row: Charts and Fundability -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <h3 class="text-lg font-bold mb-4"><i class="fa-solid fa-chart-line text-sky-400 mr-2"></i> Credit Growth</h3>
+                <canvas id="creditChart" height="200"></canvas>
+            </div>
+            <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold"><i class="fa-solid fa-shield-check text-emerald-400 mr-2"></i> Fundability Score</h3>
+                    <span id="fund-score" class="text-2xl font-black text-emerald-400">0/100</span>
+                </div>
+                <div id="fund-checks" class="space-y-3 mt-4"></div>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        
         <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
           <div class="flex justify-between items-start mb-4">
             <h3 class="text-lg font-bold"><i class="fa-solid fa-crosshairs text-sky-400 mr-2"></i> Next Target Application</h3>
@@ -559,7 +585,21 @@ def serve_dashboard():
       </div>
     </div>
 
+    
+    <!-- Admin Tab -->
+    <div id="view-admin" class="view-section space-y-6">
+      <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-indigo-950/30 border border-indigo-900/50 rounded-xl p-4"><p class="text-xs text-indigo-300">Total Users</p><h2 id="ad-users" class="text-2xl font-bold text-white mt-1">--</h2></div>
+        <div class="bg-emerald-950/30 border border-emerald-900/50 rounded-xl p-4"><p class="text-xs text-emerald-300">Companies</p><h2 id="ad-comps" class="text-2xl font-bold text-white mt-1">--</h2></div>
+        <div class="bg-sky-950/30 border border-sky-900/50 rounded-xl p-4"><p class="text-xs text-sky-300">Active Tradelines</p><h2 id="ad-trades" class="text-2xl font-bold text-white mt-1">--</h2></div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
+        <h3 class="text-lg font-bold mb-4">Vendor Database</h3>
+        <table class="w-full text-sm"><thead class="text-xs text-slate-500 bg-slate-950 border-b border-slate-800"><tr><th class="px-4 py-3 text-left">Vendor Name</th><th class="px-4 py-3 text-left">Tier</th><th class="px-4 py-3 text-left">Category</th></tr></thead><tbody id="ad-vendors" class="divide-y divide-slate-800/50 text-slate-300"></tbody></table>
+      </div>
+    </div>
     <!-- Matrix Tab -->
+        
     <div id="view-matrix" class="view-section">
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-6">
         <h3 class="text-lg font-bold mb-6"><i class="fa-solid fa-network-wired text-sky-400 mr-2"></i> Full Vendor Ladder Matrix</h3>
@@ -580,6 +620,7 @@ def serve_dashboard():
     if (TOKEN) {
       try {
         const me = await apiFetch('/api/auth/me');
+        if (me.is_admin) document.getElementById("tab-admin").classList.remove("hidden");
         if (me.company_id) { COMPANY_ID = me.company_id; localStorage.setItem('tb_company_id', COMPANY_ID); showApp(me); }
         else { hideAll(); document.getElementById('setup-gate').classList.remove('hidden'); }
       } catch { showAuthGate(); }
@@ -612,6 +653,7 @@ def serve_dashboard():
       }
       const data = await res.json();
       TOKEN = data.access_token; localStorage.setItem('tb_token', TOKEN);
+      if (data.is_admin) document.getElementById("tab-admin").classList.remove("hidden");
       if (data.company_id) { COMPANY_ID = data.company_id; localStorage.setItem('tb_company_id', COMPANY_ID); showApp(data); }
       else { hideAll(); document.getElementById('setup-gate').classList.remove('hidden'); }
     } catch(e) { errEl.textContent = 'Network error. Is the server running?'; errEl.classList.remove('hidden'); }
@@ -686,9 +728,41 @@ def serve_dashboard():
       document.getElementById('btn-apply').href = t.application_url;
     }
     dossierJson = JSON.stringify(dash.autofill_payload, null, 2);
+    
+    // Render Fundability
+    if(dash.fundability) {
+        document.getElementById('fund-score').textContent = dash.fundability.score + '/100';
+        document.getElementById('fund-checks').innerHTML = dash.fundability.checks.map(c => 
+            `<div class="flex items-center gap-3"><i class="fa-solid ${c.pass ? 'fa-circle-check text-emerald-500' : 'fa-circle-xmark text-red-500'}"></i> <span class="text-sm ${c.pass ? 'text-slate-300' : 'text-slate-500'}">${c.label}</span></div>`
+        ).join('');
+    }
+
+    // Render Chart
+    if(dash.chart_data && !window.paydexChart) {
+        const ctx = document.getElementById('creditChart').getContext('2d');
+        window.paydexChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: dash.chart_data.labels, datasets: [{ label: 'PAYDEX Score', data: dash.chart_data.paydex, borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.1)', tension: 0.4, fill: true, borderWidth: 3 }] },
+            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { min: 0, max: 100, grid: { color: '#1e293b' } }, x: { grid: { display: false } } } }
+        });
+    } else if(window.paydexChart) {
+        window.paydexChart.data.datasets[0].data = dash.chart_data.paydex;
+        window.paydexChart.update();
+    }
+        
     document.getElementById('autofill-box').textContent = dossierJson;
 
     const port = await apiFetch(`/api/portfolio/${COMPANY_ID}`);
+    try {
+      const ad = await apiFetch('/api/admin/overview');
+      if (ad) {
+        document.getElementById('ad-users').textContent = ad.users;
+        document.getElementById('ad-comps').textContent = ad.companies;
+        document.getElementById('ad-trades').textContent = ad.tradelines;
+        document.getElementById('ad-vendors').innerHTML = ad.vendors.map(v => `<tr class="hover:bg-slate-800/30"><td class="px-4 py-3 font-medium text-white">${v.name}</td><td class="px-4 py-3"><span class="bg-slate-800 px-2 py-0.5 rounded text-xs">Tier ${v.tier}</span></td><td class="px-4 py-3 text-xs text-slate-400">${v.category}</td></tr>`).join('');
+      }
+    } catch(e) {}
+        
     document.getElementById('tradelines-table').innerHTML = port.tradelines.map(tr => `<tr class="hover:bg-slate-800/30"><td class="px-4 py-3 font-medium text-white">${tr.vendor}</td><td class="px-4 py-3"><span class="bg-slate-800 px-2 py-0.5 rounded text-xs">Tier ${tr.tier}</span></td><td class="px-4 py-3 text-emerald-400">$${tr.limit.toLocaleString()}</td><td class="px-4 py-3 text-xs text-slate-400">${tr.reports_to}</td></tr>`).join('');
     
 document.getElementById('payments-list').innerHTML = port.recent_payments.map(p => `
