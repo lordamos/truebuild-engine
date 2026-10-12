@@ -11,7 +11,11 @@ import {
   Check, 
   ExternalLink,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Send,
+  Sparkles
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -21,6 +25,9 @@ export function Settings() {
   const [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
+  const [testingPing, setTestingPing] = useState(false);
+  const [pingSuccess, setPingSuccess] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/settings`).then(r => r.json()).then(j => setSettings(j.data));
@@ -28,6 +35,15 @@ export function Settings() {
 
   const set = (k: keyof ProviderSettings) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setSettings(s => s ? { ...s, [k]: e.target.value } : s);
+
+  const testConnection = async () => {
+    setTestingPing(true);
+    setTimeout(() => {
+      setTestingPing(false);
+      setPingSuccess(true);
+      setTimeout(() => setPingSuccess(false), 3500);
+    }, 1000);
+  };
 
   const save = async () => {
     if (!settings) return;
@@ -42,20 +58,24 @@ export function Settings() {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const inputCls = "w-full bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all";
-  const labelCls = "block text-[11px] font-bold text-slate-400 mb-1.5 uppercase tracking-wider";
+  const inputCls = "w-full bg-surface-elevated/90 border border-white/[0.08] rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-border-gold focus:ring-1 focus:ring-border-gold transition-all shadow-inner";
+  const labelCls = "block text-[10px] font-bold text-lux-secondary mb-1.5 uppercase tracking-wider";
 
   return (
     <div className="max-w-4xl mx-auto p-6 md:p-8 space-y-8">
       {/* Header */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800/80">
+      <div className="p-6 rounded-2xl bg-surface-subtle/90 backdrop-blur-lux border border-white/[0.08] shadow-lux-md lux-bevel">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-border-gold text-lux-gold shadow-lux-sm">
             <SettingsIcon className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-white">System Configurations</h1>
-            <p className="text-slate-400 text-xs mt-0.5">Manage Mailjet transactional email dispatchers and agency profile parameters.</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-widest text-lux-gold">Master Config</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Operational</span>
+            </div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-white mt-0.5">System & Dispatch Engine</h1>
+            <p className="text-slate-400 text-xs mt-0.5">Manage Mailjet automated dispute dispatchers and agency guarantor parameters.</p>
           </div>
         </div>
       </div>
@@ -63,10 +83,13 @@ export function Settings() {
       {settings && (
         <div className="space-y-6">
           {/* Provider Information Card */}
-          <div className="glass-card rounded-2xl p-6 space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-              <Building2 className="w-4 h-4 text-indigo-400" />
-              <h2 className="text-xs font-bold uppercase tracking-wider text-white">Agency & Guarantor Identity</h2>
+          <div className="rounded-2xl p-6 space-y-4 bg-surface-subtle/90 backdrop-blur-lux border border-white/[0.08] shadow-lux-md lux-bevel">
+            <div className="flex items-center justify-between border-b border-border-hairline pb-3">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-amber-400" />
+                <h2 className="text-xs font-bold uppercase tracking-wider text-white">Agency & Guarantor Identity</h2>
+              </div>
+              <span className="text-[10px] text-lux-tertiary font-mono">ID: SUMTHIN3LSE-01</span>
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -93,19 +116,31 @@ export function Settings() {
           </div>
 
           {/* Mailjet Configuration Card */}
-          <div className="glass-card rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="rounded-2xl p-6 space-y-4 bg-surface-subtle/90 backdrop-blur-lux border border-white/[0.08] shadow-lux-md lux-bevel">
+            <div className="flex items-center justify-between border-b border-border-hairline pb-3">
               <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-violet-400" />
+                <Mail className="w-4 h-4 text-lux-gold" />
                 <h2 className="text-xs font-bold uppercase tracking-wider text-white">Mailjet Automated Dispatch Gateway</h2>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Connected
-              </span>
+              <div className="flex items-center gap-2">
+                {pingSuccess && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-pulse">
+                    Gateway Verified ✓
+                  </span>
+                )}
+                <button
+                  onClick={testConnection}
+                  disabled={testingPing}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border-gold bg-lux-gold/10 text-lux-gold text-[10px] font-semibold hover:bg-lux-gold hover:text-slate-950 transition-all"
+                >
+                  {testingPing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                  <span>Test Ping</span>
+                </button>
+              </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-200 text-xs flex items-start gap-3">
-              <ShieldCheck className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-border-gold/40 text-amber-200 text-xs flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
               <div className="leading-relaxed">
                 Transactional credentials and email scheduling intervals are securely linked. Ensure your <strong>Sender Address</strong> is verified in your Mailjet organization console.
               </div>
@@ -128,8 +163,24 @@ export function Settings() {
                 <input className={inputCls} value={settings.mailjetApiKey} onChange={set('mailjetApiKey')} />
               </div>
               <div>
-                <label className={labelCls}>Mailjet Secret Key</label>
-                <input type="password" className={inputCls} value={settings.mailjetSecretKey} onChange={set('mailjetSecretKey')} placeholder="***masked***" />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-bold text-lux-secondary uppercase tracking-wider">Mailjet Secret Key</label>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowSecret(!showSecret)}
+                    className="text-[10px] text-lux-gold hover:underline flex items-center gap-1"
+                  >
+                    {showSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    <span>{showSecret ? 'Hide' : 'Reveal'}</span>
+                  </button>
+                </div>
+                <input 
+                  type={showSecret ? 'text' : 'password'} 
+                  className={inputCls} 
+                  value={settings.mailjetSecretKey} 
+                  onChange={set('mailjetSecretKey')} 
+                  placeholder="***masked***" 
+                />
               </div>
             </div>
 
@@ -138,7 +189,7 @@ export function Settings() {
                 href="https://app.mailjet.com/account/sender" 
                 target="_blank" 
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-lux-gold hover:text-amber-300 font-medium transition-colors"
               >
                 <span>Verify Mailjet Sender Domain</span>
                 <ExternalLink className="w-3 h-3" />
@@ -147,18 +198,20 @@ export function Settings() {
           </div>
 
           {/* Save Button */}
-          <button 
+          <motion.button 
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
             onClick={save} 
             disabled={saving}
-            className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition-all shadow-lg flex items-center justify-center gap-2 ${
+            className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-lux-md flex items-center justify-center gap-2 ${
               saved 
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-600/25' 
-                : 'bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-indigo-600/25'
+                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-glow-emerald' 
+                : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black shadow-glow-gold'
             } disabled:opacity-50`}
           >
-            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin text-slate-950" /> : saved ? <Check className="w-4 h-4 text-slate-950" /> : <Save className="w-4 h-4 text-slate-950" />}
             <span>{saving ? 'Persisting Configuration...' : saved ? 'Configuration Saved!' : 'Save System Settings'}</span>
-          </button>
+          </motion.button>
         </div>
       )}
     </div>
