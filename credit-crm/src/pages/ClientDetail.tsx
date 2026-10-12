@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { Client, AgentId, PipelineStage, EmailStage } from '../types/credit';
+import type { Client, AgentId, PipelineStage, EmailStage, BusinessProfile, AddressType, ReadinessVerdict } from '../types/credit';
 import { PIPELINE_STAGES, AGENT_META, EMAIL_STAGE_META } from '../types/credit';
 import type { Page } from '../App';
 import { AutoRepairEngine } from '../components/AutoRepairEngine';
@@ -24,7 +24,14 @@ import {
   TrendingUp,
   AlertCircle,
   FileCheck2,
-  Check
+  Check,
+  Building2,
+  AlertTriangle,
+  XCircle,
+  Sliders,
+  Play,
+  Award,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -32,11 +39,12 @@ const API = 'http://localhost:3002/api';
 
 const STAGE_ORDER: PipelineStage[] = ['NEW', 'DOCS_VERIFIED', 'SUBMITTED', 'APPROVED', 'INVOICE_SENT', 'PAID', 'DISPUTE_ACTIVE', 'POST_CARE'];
 const AGENT_ORDER: AgentId[] = ['COMPREHENSIVE_AUDIT', 'ROADMAP_90_DAY', 'DEBT_OPTIMIZER', 'DISPUTE_LETTER', 'GOODWILL_LETTER', 'INQUIRY_MINIMIZER', 'SECONDARY_FREEZE', 'CREDIT_GROWTH'];
+export const BIZ_AGENT_ORDER: AgentId[] = ['BIZ_FORMATION_EIN', 'BIZ_ADDRESS_FOOTPRINT', 'BIZ_NAICS_CLASSIFICATION', 'BIZ_COMMINGLING_FINANCES', 'BIZ_FUNDING_READINESS'];
 const EMAIL_STAGES: EmailStage[] = ['WELCOME', 'DOCS_VERIFIED', 'SUBMITTED', 'APPROVED', 'PAYMENT_CONFIRMED', 'OVERDUE_48H', 'POST_CARE_45DAY'];
 
 interface Props { clientId: string; navigate: (p: Page) => void; }
 
-type Tab = 'overview' | 'repair' | 'agents' | 'emails' | 'disputes' | 'agreement';
+type Tab = 'overview' | 'repair' | 'agents' | 'business-audit' | 'emails' | 'disputes' | 'agreement';
 
 function renderMarkdown(text: string): string {
   return text
@@ -117,6 +125,11 @@ export function ClientDetail({ clientId, navigate }: Props) {
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentId | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [runningBizAudit, setRunningBizAudit] = useState(false);
+  const [runningSingleBiz, setRunningSingleBiz] = useState<AgentId | null>(null);
+  const [showBizConfigModal, setShowBizConfigModal] = useState(false);
+  const [savingBizProfile, setSavingBizProfile] = useState(false);
+  const [bizFormData, setBizFormData] = useState<BusinessProfile>({});
 
   const load = async () => {
     setLoading(true);
@@ -124,6 +137,9 @@ export function ClientDetail({ clientId, navigate }: Props) {
       const res = await fetch(`${API}/clients/${clientId}`);
       const json = await res.json();
       setClient(json.data);
+      if (json.data?.businessProfile) {
+        setBizFormData(json.data.businessProfile);
+      }
     } finally { setLoading(false); }
   };
 
@@ -135,6 +151,49 @@ export function ClientDetail({ clientId, navigate }: Props) {
     await load();
     setRunningAgents(false);
     setTab('agents');
+  };
+
+  const runBusinessAudit = async (customProfile?: BusinessProfile) => {
+    setRunningBizAudit(true);
+    try {
+      await fetch(`${API}/clients/${clientId}/run-business-audit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(customProfile || client?.businessProfile || {})
+      });
+      await load();
+      setTab('business-audit');
+    } finally {
+      setRunningBizAudit(false);
+    }
+  };
+
+  const runSingleBizPrompt = async (agentId: AgentId) => {
+    setRunningSingleBiz(agentId);
+    try {
+      await fetch(`${API}/clients/${clientId}/run-agent/${agentId}`, {
+        method: 'POST'
+      });
+      await load();
+    } finally {
+      setRunningSingleBiz(null);
+    }
+  };
+
+  const saveBusinessProfileAndRerun = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingBizProfile(true);
+    try {
+      await fetch(`${API}/clients/${clientId}/business-profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bizFormData)
+      });
+      setShowBizConfigModal(false);
+      await runBusinessAudit(bizFormData);
+    } finally {
+      setSavingBizProfile(false);
+    }
   };
 
   const advanceStage = async () => {
@@ -205,13 +264,15 @@ export function ClientDetail({ clientId, navigate }: Props) {
 
   const currentStageIdx = STAGE_ORDER.indexOf(client.stage);
   const nextStage = STAGE_ORDER[currentStageIdx + 1];
-  const agentsDone = Object.keys(client.agentOutputs).length;
+  const agentsDone = AGENT_ORDER.filter(id => client.agentOutputs[id]?.status === 'COMPLETE').length;
+  const bizAuditsDone = BIZ_AGENT_ORDER.filter(id => client.agentOutputs[id]?.status === 'COMPLETE').length;
   const stageInfo = PIPELINE_STAGES[client.stage];
   const intakeUrl = `${window.location.origin}/#/intake/${client.intakeToken}`;
 
   const tabs: { id: Tab; label: string; icon: any; count?: number }[] = [
     { id: 'overview', label: 'Overview', icon: FileText },
     { id: 'repair', label: 'Auto Repair', icon: Wrench },
+    { id: 'business-audit', label: 'Commercial Audit (5 Prompts)', icon: Building2, count: bizAuditsDone },
     { id: 'agents', label: 'AI Agents', icon: Bot, count: agentsDone },
     { id: 'emails', label: 'Emails', icon: Mail, count: client.emailLog.length },
     { id: 'disputes', label: 'Dispute Letters', icon: Scale, count: client.disputes.length },
@@ -345,14 +406,25 @@ export function ClientDetail({ clientId, navigate }: Props) {
             </div>
           </div>
 
-          <button 
-            onClick={runAgents} 
-            disabled={runningAgents}
-            className="flex items-center gap-2 rounded-xl border border-border-gold bg-lux-gold/10 px-5 py-3 text-xs font-bold text-lux-gold shadow-lux-sm transition-all hover:bg-lux-gold hover:text-canvas-base disabled:opacity-50"
-          >
-            {runningAgents ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{runningAgents ? 'Executing 8 Engines...' : 'Execute 8 AI Agents'}</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button 
+              onClick={() => runBusinessAudit()} 
+              disabled={runningBizAudit}
+              className="flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-indigo-600/20 px-4 py-3 text-xs font-bold text-indigo-200 shadow-sm transition-all hover:bg-indigo-600 hover:text-white disabled:opacity-50"
+            >
+              {runningBizAudit ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />}
+              <span>{runningBizAudit ? 'Running 5 Audits...' : 'Run 5-Prompt Biz Audit'}</span>
+            </button>
+
+            <button 
+              onClick={runAgents} 
+              disabled={runningAgents}
+              className="flex items-center gap-2 rounded-xl border border-border-gold bg-lux-gold/10 px-5 py-3 text-xs font-bold text-lux-gold shadow-lux-sm transition-all hover:bg-lux-gold hover:text-canvas-base disabled:opacity-50"
+            >
+              {runningAgents ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              <span>{runningAgents ? 'Executing 8 Engines...' : 'Execute 8 AI Agents'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -509,6 +581,202 @@ export function ClientDetail({ clientId, navigate }: Props) {
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab: Commercial Audit (5 Prompts) */}
+          {tab === 'business-audit' && (
+            <div className="space-y-6">
+              {/* Executive Suite Summary Banner */}
+              <div className="relative overflow-hidden rounded-2xl bg-surface-subtle/80 backdrop-blur-lux border border-border-hairline p-6 shadow-lux-md transition-all duration-300 hover:border-border-gold hover:shadow-glow-gold">
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/[0.03] to-transparent"></div>
+
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-lux-gold">
+                        Executive Underwriting Suite
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-lux-gold/10 text-lux-gold border border-border-gold">
+                        5-Prompt Commercial Engine
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-extrabold text-lux-primary">
+                      Autonomous Commercial Underwriting & Funding Readiness
+                    </h2>
+                    <p className="text-xs text-lux-secondary max-w-2xl leading-relaxed">
+                      Audits legal formation, physical/digital footprint integrity, operational NAICS classification, and commingling risks to ensure zero lender red flags.
+                    </p>
+                  </div>
+
+                  {/* Readiness Status & Actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                    <div className="p-3.5 rounded-xl bg-surface-elevated/80 border border-slate-800 flex items-center gap-3">
+                      <div className="text-center px-2">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Verdict</div>
+                        {client.agentOutputs['BIZ_FUNDING_READINESS']?.verdict === 'READY' ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> READY
+                          </span>
+                        ) : client.agentOutputs['BIZ_FUNDING_READINESS']?.verdict === 'NEEDS_ATTENTION' ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-black text-amber-400">
+                            <AlertTriangle className="w-3.5 h-3.5" /> ATTENTION
+                          </span>
+                        ) : client.agentOutputs['BIZ_FUNDING_READINESS']?.verdict === 'FIX_BEFORE_APPLYING' ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-black text-rose-400">
+                            <XCircle className="w-3.5 h-3.5" /> FIX FIRST
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-slate-500">PENDING</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setShowBizConfigModal(true)}
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all shadow-sm"
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Parameters</span>
+                      </button>
+
+                      <button
+                        onClick={() => runBusinessAudit()}
+                        disabled={runningBizAudit}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border-gold bg-lux-gold/15 hover:bg-lux-gold hover:text-canvas-base text-lux-gold text-xs font-bold shadow-lux-sm transition-all disabled:opacity-50"
+                      >
+                        {runningBizAudit ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                        <span>{runningBizAudit ? 'Executing 5 Audits...' : 'Run All 5 Audits'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sub-parameters preview chips */}
+                <div className="mt-5 pt-4 border-t border-border-hairline grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs relative z-10">
+                  <div className="bg-surface-elevated/40 border border-border-hairline rounded-lg p-2.5">
+                    <span className="text-[10px] text-lux-tertiary uppercase font-bold block">Entity & State</span>
+                    <span className="text-lux-primary font-bold">{client.businessProfile?.entityType || 'LLC'} · {client.businessProfile?.formationState || client.state}</span>
+                  </div>
+                  <div className="bg-surface-elevated/40 border border-border-hairline rounded-lg p-2.5">
+                    <span className="text-[10px] text-lux-tertiary uppercase font-bold block">Address Category</span>
+                    <span className="text-lux-primary font-bold">{client.businessProfile?.addressType ? client.businessProfile.addressType.replace(/_/g, ' ') : 'UNSPECIFIED'}</span>
+                  </div>
+                  <div className="bg-surface-elevated/40 border border-border-hairline rounded-lg p-2.5">
+                    <span className="text-[10px] text-lux-tertiary uppercase font-bold block">Dedicated Bank</span>
+                    <span className={client.businessProfile?.hasDedicatedBusinessBank ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                      {client.businessProfile?.hasDedicatedBusinessBank ? (client.businessProfile.businessBankName || 'Verified') : 'No Commercial Bank'}
+                    </span>
+                  </div>
+                  <div className="bg-surface-elevated/40 border border-border-hairline rounded-lg p-2.5">
+                    <span className="text-[10px] text-lux-tertiary uppercase font-bold block">Commingling Status</span>
+                    <span className={client.businessProfile?.comminglingDetected ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                      {client.businessProfile?.comminglingDetected ? 'Commingling Flagged' : 'Segregated Clean'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sequential 5 Prompts Cards */}
+              <div className="space-y-4">
+                {BIZ_AGENT_ORDER.map((agentId, index) => {
+                  const meta = AGENT_META[agentId];
+                  const result = client.agentOutputs[agentId];
+                  const isRunningSingle = runningSingleBiz === agentId;
+                  const isExpanded = selectedAgent === agentId;
+
+                  return (
+                    <motion.div
+                      key={agentId}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={`relative overflow-hidden rounded-2xl border transition-all duration-300 ${
+                        isExpanded
+                          ? 'border-indigo-500/80 bg-surface-elevated/90 shadow-xl shadow-indigo-600/10'
+                          : result?.status === 'COMPLETE'
+                            ? 'border-slate-800 bg-surface-subtle/70 hover:border-border-gold/60'
+                            : 'border-slate-800/60 bg-surface-subtle/40 opacity-75'
+                      }`}
+                    >
+                      {/* Card Header Bar */}
+                      <div 
+                        onClick={() => setSelectedAgent(isExpanded ? null : agentId)}
+                        className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer select-none"
+                      >
+                        <div className="flex items-start sm:items-center gap-3.5">
+                          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/10 border border-indigo-500/30 text-indigo-300 font-black text-sm shrink-0">
+                            P{index + 1}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-white tracking-wide">{meta.title}</span>
+                              <span className="text-[10px] uppercase font-bold tracking-widest text-lux-gold px-2 py-0.5 rounded-full bg-lux-gold/10 border border-border-gold">
+                                Prompt {index + 1}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">{meta.description}</p>
+                          </div>
+                        </div>
+
+                        {/* Status + Actions */}
+                        <div className="flex items-center gap-3 shrink-0" onClick={e => e.stopPropagation()}>
+                          {result?.verdict === 'READY' && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                              <CheckCircle2 className="w-3 h-3" /> READY
+                            </span>
+                          )}
+                          {result?.verdict === 'NEEDS_ATTENTION' && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              <AlertTriangle className="w-3 h-3" /> ATTENTION
+                            </span>
+                          )}
+                          {result?.verdict === 'FIX_BEFORE_APPLYING' && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                              <XCircle className="w-3 h-3" /> FIX BEFORE APPLYING
+                            </span>
+                          )}
+
+                          <button
+                            onClick={() => runSingleBizPrompt(agentId)}
+                            disabled={isRunningSingle || runningBizAudit}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all disabled:opacity-50"
+                          >
+                            {isRunningSingle ? <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" /> : <Play className="w-3 h-3 fill-current text-indigo-400" />}
+                            <span>{isRunningSingle ? 'Running...' : result ? 'Re-run Prompt' : 'Run Prompt'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => setSelectedAgent(isExpanded ? null : agentId)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+                          >
+                            <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expandable Markdown Body */}
+                      <AnimatePresence>
+                        {isExpanded && result && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="border-t border-slate-800/80 p-5 bg-slate-950/70"
+                          >
+                            <div
+                              className="prose-crm max-h-[550px] overflow-y-auto scrollbar-thin p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-200 leading-relaxed font-sans"
+                              dangerouslySetInnerHTML={{ __html: renderMarkdown(result.output) }}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -713,6 +981,318 @@ export function ClientDetail({ clientId, navigate }: Props) {
             </div>
           )}
         </motion.div>
+      </AnimatePresence>
+
+      {/* Configure Business Parameters Modal */}
+      <AnimatePresence>
+        {showBizConfigModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-2xl bg-surface-subtle border border-slate-700 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+            >
+              {/* Modal Header */}
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-surface-elevated/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-white">Commercial Underwriting Profile</h3>
+                    <p className="text-[11px] text-slate-400">Tune parameters verified by the 5-Prompt Institutional Underwriting Engine</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowBizConfigModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Form Body */}
+              <form onSubmit={saveBusinessProfileAndRerun} className="p-6 overflow-y-auto space-y-6 flex-1 scrollbar-thin">
+                {/* Section 1: Formation & EIN */}
+                <div className="space-y-3">
+                  <div className="text-xs font-bold uppercase tracking-wider text-lux-gold flex items-center gap-2">
+                    <span>Prompt 1: LLC Formation & EIN Details</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Entity Structure</label>
+                      <select
+                        value={bizFormData.entityType || 'LLC'}
+                        onChange={e => setBizFormData({ ...bizFormData, entityType: e.target.value as any })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      >
+                        <option value="LLC">LLC</option>
+                        <option value="C-Corp">C-Corp</option>
+                        <option value="S-Corp">S-Corp</option>
+                        <option value="Sole Proprietor">Sole Proprietor</option>
+                        <option value="Partnership">Partnership</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Formation State</label>
+                      <input
+                        type="text"
+                        value={bizFormData.formationState || client?.state || ''}
+                        onChange={e => setBizFormData({ ...bizFormData, formationState: e.target.value })}
+                        placeholder="FL"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Formation Year</label>
+                      <input
+                        type="number"
+                        value={bizFormData.formationYear || 2022}
+                        onChange={e => setBizFormData({ ...bizFormData, formationYear: parseInt(e.target.value) || 2022 })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">EIN Verification Status</label>
+                      <select
+                        value={bizFormData.einLetterStatus || 'VERIFIED_CP575'}
+                        onChange={e => setBizFormData({ ...bizFormData, einLetterStatus: e.target.value as any })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      >
+                        <option value="VERIFIED_CP575">CP-575 Official IRS Notice</option>
+                        <option value="VERIFIED_147C">147C Replacement Letter</option>
+                        <option value="ONLINE_CONFIRMATION">Online SS-4 PDF</option>
+                        <option value="UNVERIFIED">Unverified / Verbal</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Ownership Percentage (%)</label>
+                      <input
+                        type="number"
+                        value={bizFormData.ownershipPercentage ?? 100}
+                        onChange={e => setBizFormData({ ...bizFormData, ownershipPercentage: parseInt(e.target.value) || 100 })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 pt-1">
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bizFormData.activeGoodStanding ?? true}
+                        onChange={e => setBizFormData({ ...bizFormData, activeGoodStanding: e.target.checked })}
+                        className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                      />
+                      <span>Active SOS Good Standing</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bizFormData.operatingAgreementFiled ?? true}
+                        onChange={e => setBizFormData({ ...bizFormData, operatingAgreementFiled: e.target.checked })}
+                        className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                      />
+                      <span>Operating Agreement Executed</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Section 2: Address & Digital Footprint */}
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <div className="text-xs font-bold uppercase tracking-wider text-lux-gold flex items-center gap-2">
+                    <span>Prompt 2: Address Suitability & Digital Presence</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Physical Address Classification</label>
+                      <select
+                        value={bizFormData.addressType || 'EXECUTIVE_SUITE'}
+                        onChange={e => setBizFormData({ ...bizFormData, addressType: e.target.value as any })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      >
+                        <option value="BRICK_AND_MORTAR">Brick & Mortar Commercial Space</option>
+                        <option value="EXECUTIVE_SUITE">Executive Suite / Regus with Dedicated Suite</option>
+                        <option value="VIRTUAL_OFFICE">Virtual Office (Co-Working)</option>
+                        <option value="HOME_ADDRESS">Residential Home Address</option>
+                        <option value="CMRA_UPS_BOX">CMRA / UPS Store / Post Box</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Dedicated Suite Number</label>
+                      <input
+                        type="text"
+                        value={bizFormData.dedicatedSuiteNumber || ''}
+                        onChange={e => setBizFormData({ ...bizFormData, dedicatedSuiteNumber: e.target.value })}
+                        placeholder="Suite 300"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Corporate Domain Email</label>
+                      <input
+                        type="email"
+                        value={bizFormData.businessEmail || ''}
+                        onChange={e => setBizFormData({ ...bizFormData, businessEmail: e.target.value })}
+                        placeholder="contact@company.com"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Business Website</label>
+                      <input
+                        type="url"
+                        value={bizFormData.websiteUrl || ''}
+                        onChange={e => setBizFormData({ ...bizFormData, websiteUrl: e.target.value })}
+                        placeholder="https://company.com"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Dedicated Business Phone</label>
+                      <input
+                        type="text"
+                        value={bizFormData.businessPhone || ''}
+                        onChange={e => setBizFormData({ ...bizFormData, businessPhone: e.target.value })}
+                        placeholder="(800) 555-0199"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 pt-1">
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bizFormData.has411Listing ?? true}
+                        onChange={e => setBizFormData({ ...bizFormData, has411Listing: e.target.checked })}
+                        className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                      />
+                      <span>National 411 Directory Listed</span>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bizFormData.hasGoogleBusinessProfile ?? true}
+                        onChange={e => setBizFormData({ ...bizFormData, hasGoogleBusinessProfile: e.target.checked })}
+                        className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                      />
+                      <span>Google Business Profile Active</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Section 3: Operations & NAICS */}
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <div className="text-xs font-bold uppercase tracking-wider text-lux-gold flex items-center gap-2">
+                    <span>Prompt 3: Actual Operations & NAICS Code</span>
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">
+                      What does the business ACTUALLY do? (Operational Reality)
+                    </label>
+                    <textarea
+                      value={bizFormData.actualOperationsDescription || ''}
+                      onChange={e => setBizFormData({ ...bizFormData, actualOperationsDescription: e.target.value })}
+                      placeholder="e.g. Provides residential HVAC repair, preventative heating maintenance, and duct installation."
+                      rows={2}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Registered NAICS Code (if known)</label>
+                    <input
+                      type="text"
+                      value={bizFormData.currentNaicsCode || ''}
+                      onChange={e => setBizFormData({ ...bizFormData, currentNaicsCode: e.target.value })}
+                      placeholder="238220"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Section 4: Commingling & Banking */}
+                <div className="space-y-3 pt-3 border-t border-slate-800">
+                  <div className="text-xs font-bold uppercase tracking-wider text-lux-gold flex items-center gap-2">
+                    <span>Prompt 4: Commingling & Banking Forensic Flags</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Commercial Bank Name</label>
+                      <input
+                        type="text"
+                        value={bizFormData.businessBankName || 'Chase Business Checking'}
+                        onChange={e => setBizFormData({ ...bizFormData, businessBankName: e.target.value })}
+                        placeholder="Chase Business"
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Avg Monthly Commercial Revenue ($)</label>
+                      <input
+                        type="number"
+                        value={bizFormData.averageMonthlyRevenue ?? 20000}
+                        onChange={e => setBizFormData({ ...bizFormData, averageMonthlyRevenue: parseInt(e.target.value) || 0 })}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 pt-1">
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bizFormData.hasDedicatedBusinessBank ?? true}
+                        onChange={e => setBizFormData({ ...bizFormData, hasDedicatedBusinessBank: e.target.checked })}
+                        className="rounded border-slate-700 bg-slate-900 text-indigo-600"
+                      />
+                      <span>Dedicated Business Checking Account</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bizFormData.comminglingDetected ?? false}
+                        onChange={e => setBizFormData({ ...bizFormData, comminglingDetected: e.target.checked })}
+                        className="rounded border-slate-700 bg-slate-900 text-rose-500"
+                      />
+                      <span className="text-rose-300">Flag Commingling (Personal Card on Biz Expenses)</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowBizConfigModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingBizProfile}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50"
+                  >
+                    {savingBizProfile ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    <span>{savingBizProfile ? 'Saving & Auditing...' : 'Save & Execute 5 Audits'}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
 
     </div>
