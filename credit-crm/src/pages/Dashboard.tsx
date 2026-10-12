@@ -137,6 +137,43 @@ export function Dashboard({ navigate }: Props) {
         </div>
       </div>
 
+      {/* Luxury Executive Suite Portfolio Card */}
+      <motion.div 
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="relative overflow-hidden rounded-2xl bg-surface-subtle/80 backdrop-blur-lux border border-border-hairline p-6 shadow-lux-md transition-all duration-300 hover:border-border-gold hover:shadow-glow-gold"
+      >
+        {/* Subtle ambient top gradient */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-white/[0.03] to-transparent"></div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-widest text-lux-gold">
+            Executive Suite
+          </span>
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-lux-gold/10 text-lux-gold border border-border-gold">
+            Private Client Reserve
+          </span>
+        </div>
+
+        <h3 className="mt-2 text-xl font-medium text-lux-primary">
+          Portfolio Performance
+        </h3>
+        <p className="mt-1 text-sm text-lux-secondary">
+          Real-time multi-asset aggregation and predictive margin forecasts across active guarantor credit facilities.
+        </p>
+
+        <div className="mt-6 flex items-center justify-between border-t border-border-hairline pt-4">
+          <span className="text-xs text-lux-tertiary">Live Underwriting Sync · Active</span>
+          <button 
+            onClick={() => setStageFilter(stageFilter === 'ALL' ? 'APPROVED' : 'ALL')}
+            className="rounded-lg border border-border-gold bg-lux-gold/10 px-4 py-1.5 text-xs font-medium text-lux-gold transition-colors hover:bg-lux-gold hover:text-canvas-base"
+          >
+            {stageFilter === 'APPROVED' ? 'Show All Stages' : 'View Approved Ledger'}
+          </button>
+        </div>
+      </motion.div>
+
       {/* KPI Cards Grid with Staggered Fade-in */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
         {[
