@@ -3,20 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TrueBuild Dual Desktop Suite</title>
+  <title>TrueBuild Dual Desktop Suite — Executive Edition</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <style>
+    :root {
+      /* Surface Elevation & Border Tokens */
+      --lux-inner-bevel: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+      --lux-glass-blur: blur(16px);
+      --lux-surface-glass: rgba(17, 17, 21, 0.85);
+      --lux-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+      --lux-shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.6), var(--lux-inner-bevel);
+      --lux-shadow-lg: 0 16px 40px -8px rgba(0, 0, 0, 0.8), var(--lux-inner-bevel);
+      --lux-glow-gold: 0 0 32px -4px rgba(217, 183, 121, 0.22);
+      --lux-glow-indigo: 0 0 32px -4px rgba(99, 102, 241, 0.22);
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       overflow: hidden;
       margin: 0;
       padding: 0;
+      background: #08080a;
+    }
+    .lux-header {
+      background: var(--lux-surface-glass);
+      backdrop-filter: var(--lux-glass-blur);
+      -webkit-backdrop-filter: var(--lux-glass-blur);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--lux-shadow-md);
     }
     .iframe-container {
-      height: calc(100vh - 54px);
+      height: calc(100vh - 56px);
       width: 100vw;
       position: relative;
     }
@@ -30,53 +49,53 @@
       transition: opacity 0.2s ease-in-out;
     }
     .tab-active {
-      background: linear-gradient(135deg, rgba(79, 70, 229, 0.25), rgba(124, 58, 237, 0.25));
-      border-color: rgba(99, 102, 241, 0.6);
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(217, 183, 121, 0.15));
+      border: 1px solid rgba(218, 185, 122, 0.35);
       color: #ffffff;
-      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+      box-shadow: var(--lux-inner-bevel), 0 4px 16px rgba(0, 0, 0, 0.5);
     }
     .pulse-online {
-      box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
     }
     .pulse-offline {
-      box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
     }
   </style>
 </head>
-<body class="h-full flex flex-col bg-slate-950">
+<body class="h-full flex flex-col bg-[#08080a]">
 
-  <!-- TOP DESKTOP APP NAVIGATION BAR -->
-  <header class="h-[54px] bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 flex items-center justify-between z-50">
+  <!-- LUXURY TOP DESKTOP APP NAVIGATION BAR -->
+  <header class="h-[56px] lux-header px-4 flex items-center justify-between z-50">
     
     <!-- BRAND / TITLE -->
     <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/30">
-        <i class="fa-solid fa-shield-halved text-sm"></i>
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-amber-500 via-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-amber-500/20">
+        <i class="fa-solid fa-shield-halved text-xs"></i>
       </div>
       <div>
-        <div class="text-sm font-bold tracking-tight text-white flex items-center gap-2">
-          TrueBuild <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 font-semibold border border-indigo-500/30">DESKTOP</span>
+        <div class="text-sm font-bold tracking-tight text-[#f5f5f7] flex items-center gap-2">
+          TrueBuild <span class="text-[10px] px-2 py-0.5 rounded font-extrabold uppercase tracking-wider bg-amber-500/15 text-[#d9b779] border border-amber-500/30">EXECUTIVE SUITE</span>
         </div>
-        <div class="text-[10px] text-slate-400 font-medium">Sumthin3lse Global Dual-Threat Suite</div>
+        <div class="text-[10px] text-[#9d9da8] font-medium">Sumthin3lse Global Dual-Threat Architecture</div>
       </div>
     </div>
 
     <!-- MAIN ENGINE TABS -->
-    <div class="flex items-center bg-slate-950/70 p-1 rounded-xl border border-slate-800/80 gap-1">
-      <button id="btn-tab-truebuild" onclick="switchEngine('truebuild')" class="tab-active px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2">
+    <div class="flex items-center bg-[#111115]/90 p-1 rounded-xl border border-white/[0.06] gap-1 shadow-inner">
+      <button id="btn-tab-truebuild" onclick="switchEngine('truebuild')" class="tab-active px-4 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2">
         <i class="fa-solid fa-building text-indigo-400"></i>
         <span>Corporate Credit</span>
         <span class="text-[10px] opacity-60 font-mono">Ctrl+1</span>
       </button>
 
-      <button id="btn-tab-crm" onclick="switchEngine('crm')" class="text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2">
-        <i class="fa-solid fa-scale-balanced text-violet-400"></i>
+      <button id="btn-tab-crm" onclick="switchEngine('crm')" class="text-[#9d9da8] hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2">
+        <i class="fa-solid fa-scale-balanced text-amber-400"></i>
         <span>Personal Credit CRM</span>
         <span class="text-[10px] opacity-60 font-mono">Ctrl+2</span>
       </button>
 
-      <button onclick="openFunding()" class="text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 px-3 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-1.5">
-        <i class="fa-solid fa-vault text-amber-400"></i>
+      <button onclick="openFunding()" class="text-[#9d9da8] hover:text-[#d9b779] hover:bg-amber-500/10 px-3 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-1.5">
+        <i class="fa-solid fa-vault text-[#d9b779]"></i>
         <span>Funding Matrix</span>
       </button>
     </div>
@@ -84,7 +103,7 @@
     <!-- ENGINE HEALTH STATUS & CONTROLS -->
     <div class="flex items-center gap-3">
       <!-- Status Badges -->
-      <div class="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-lg border border-slate-800 text-[11px]">
+      <div class="flex items-center gap-2 bg-[#111115]/80 px-3 py-1.5 rounded-xl border border-white/[0.06] text-[11px]">
         <div class="flex items-center gap-1.5" title="TrueBuild FastAPI Backend (Port 8000)">
           <span id="dot-truebuild" class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>
           <span class="text-slate-300 font-mono font-medium">Engine :8000</span>
@@ -98,10 +117,10 @@
 
       <!-- Quick Action Buttons -->
       <div class="flex items-center gap-1">
-        <button onclick="reloadActiveFrame()" title="Reload Active Tab (Ctrl+R)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition border border-slate-700 text-xs">
+        <button onclick="reloadActiveFrame()" title="Reload Active Tab (Ctrl+R)" class="w-8 h-8 rounded-lg bg-[#18181f] hover:bg-slate-700 text-[#9d9da8] hover:text-white flex items-center justify-center transition border border-white/[0.08] text-xs">
           <i class="fa-solid fa-rotate-right"></i>
         </button>
-        <button onclick="openInBrowser()" title="Open in External Web Browser" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition border border-slate-700 text-xs">
+        <button onclick="openInBrowser()" title="Open in External Web Browser" class="w-8 h-8 rounded-lg bg-[#18181f] hover:bg-slate-700 text-[#9d9da8] hover:text-white flex items-center justify-center transition border border-white/[0.08] text-xs">
           <i class="fa-solid fa-arrow-up-right-from-square"></i>
         </button>
       </div>
@@ -127,8 +146,8 @@
       const frameCrm = document.getElementById('frame-crm');
 
       if (engine === 'truebuild') {
-        btnTrueBuild.className = "tab-active px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
-        btnCrm.className = "text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
+        btnTrueBuild.className = "tab-active px-4 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2";
+        btnCrm.className = "text-[#9d9da8] hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
         frameTrueBuild.style.opacity = '1';
         frameTrueBuild.style.pointerEvents = 'auto';
         frameTrueBuild.style.zIndex = '20';
@@ -136,8 +155,8 @@
         frameCrm.style.pointerEvents = 'none';
         frameCrm.style.zIndex = '10';
       } else {
-        btnCrm.className = "tab-active px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
-        btnTrueBuild.className = "text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
+        btnCrm.className = "tab-active px-4 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-2";
+        btnTrueBuild.className = "text-[#9d9da8] hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
         frameCrm.style.opacity = '1';
         frameCrm.style.pointerEvents = 'auto';
         frameCrm.style.zIndex = '20';
@@ -152,7 +171,6 @@
       try {
         const frame = document.getElementById('frame-truebuild');
         frame.contentWindow.postMessage({ action: 'switchTab', tab: 'funding' }, '*');
-        // Fallback: reload hash
         frame.src = "http://127.0.0.1:8000#funding";
       } catch (e) {
         console.error(e);
@@ -175,9 +193,7 @@
       }
     }
 
-    // Ping check health of services
     async function checkHealth() {
-      // TrueBuild
       try {
         const res = await fetch('http://127.0.0.1:8000/api/dashboard/stats', { cache: 'no-store' });
         const dot = document.getElementById('dot-truebuild');
@@ -191,7 +207,6 @@
         dot.className = "w-2 h-2 rounded-full bg-rose-500 pulse-offline";
       }
 
-      // CRM
       try {
         const res = await fetch('http://127.0.0.1:3002/api/health', { cache: 'no-store' });
         const dot = document.getElementById('dot-crm');
@@ -209,7 +224,6 @@
     setInterval(checkHealth, 5000);
     checkHealth();
 
-    // Keyboard Shortcuts
     window.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === '1') {
         e.preventDefault();

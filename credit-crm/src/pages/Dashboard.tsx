@@ -17,7 +17,11 @@ import {
   ChevronRight,
   Filter,
   Sparkles,
-  ArrowUpRight
+  ArrowUpRight,
+  X,
+  FileSpreadsheet,
+  Shield,
+  Award
 } from 'lucide-react';
 
 const API = 'http://localhost:3002/api';
@@ -57,6 +61,7 @@ export function Dashboard({ navigate }: Props) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState<PipelineStage | 'ALL'>('ALL');
+  const [showLedger, setShowLedger] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -163,16 +168,135 @@ export function Dashboard({ navigate }: Props) {
           Real-time multi-asset aggregation and predictive margin forecasts across active guarantor credit facilities.
         </p>
 
-        <div className="mt-6 flex items-center justify-between border-t border-border-hairline pt-4">
-          <span className="text-xs text-lux-tertiary">Live Underwriting Sync · Active</span>
-          <button 
-            onClick={() => setStageFilter(stageFilter === 'ALL' ? 'APPROVED' : 'ALL')}
-            className="rounded-lg border border-border-gold bg-lux-gold/10 px-4 py-1.5 text-xs font-medium text-lux-gold transition-colors hover:bg-lux-gold hover:text-canvas-base"
-          >
-            {stageFilter === 'APPROVED' ? 'Show All Stages' : 'View Approved Ledger'}
-          </button>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-border-hairline pt-4">
+          <span className="text-xs text-lux-tertiary">Live Underwriting Sync · Multi-Asset Aggregation</span>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setStageFilter(stageFilter === 'ALL' ? 'APPROVED' : 'ALL')}
+              className="rounded-lg border border-slate-800 bg-slate-900/80 px-3.5 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:text-white hover:border-slate-700"
+            >
+              {stageFilter === 'APPROVED' ? 'Reset Filter' : 'Filter Approved (Kanban)'}
+            </button>
+            <button 
+              onClick={() => setShowLedger(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-border-gold bg-lux-gold/10 px-4 py-1.5 text-xs font-semibold text-lux-gold transition-all hover:bg-lux-gold hover:text-canvas-base shadow-sm"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Open Executive Ledger</span>
+            </button>
+          </div>
         </div>
       </motion.div>
+
+      {/* EXECUTIVE LEDGER MODAL DRAWER */}
+      {showLedger && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="w-full max-w-4xl max-h-[85vh] flex flex-col rounded-2xl bg-surface-elevated/95 backdrop-blur-lux border border-border-gold shadow-2xl overflow-hidden"
+          >
+            {/* Modal Header */}
+            <div className="p-6 border-b border-border-hairline flex items-center justify-between bg-surface-subtle/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-lux-gold/10 border border-border-gold text-lux-gold">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-widest text-lux-gold">Executive Reserve</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Audited</span>
+                  </div>
+                  <h2 className="text-xl font-bold text-lux-primary mt-0.5">Private Client Reserve Ledger</h2>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowLedger(false)}
+                className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Metrics Overview */}
+            <div className="grid grid-cols-3 gap-4 p-6 bg-canvas-base/40 border-b border-border-hairline">
+              <div className="p-4 rounded-xl bg-surface-subtle border border-border-hairline">
+                <div className="text-[11px] font-semibold text-lux-secondary uppercase tracking-wider">Approved Exposure</div>
+                <div className="text-2xl font-bold text-lux-gold mt-1">${(approved * 50000).toLocaleString()}</div>
+                <div className="text-[10px] text-lux-tertiary mt-0.5">Aggregated credit facilities</div>
+              </div>
+              <div className="p-4 rounded-xl bg-surface-subtle border border-border-hairline">
+                <div className="text-[11px] font-semibold text-lux-secondary uppercase tracking-wider">Success Fee Yield</div>
+                <div className="text-2xl font-bold text-emerald-400 mt-1">${(totalRevenue + pendingRevenue).toLocaleString()}</div>
+                <div className="text-[10px] text-lux-tertiary mt-0.5">Collected & accrued fees</div>
+              </div>
+              <div className="p-4 rounded-xl bg-surface-subtle border border-border-hairline">
+                <div className="text-[11px] font-semibold text-lux-secondary uppercase tracking-wider">Client Facility Count</div>
+                <div className="text-2xl font-bold text-lux-primary mt-1">{approved} Accounts</div>
+                <div className="text-[10px] text-lux-tertiary mt-0.5">Active underwritten portfolios</div>
+              </div>
+            </div>
+
+            {/* Modal Table Content */}
+            <div className="flex-1 overflow-y-auto p-6 scrollbar-thin">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border-hairline text-lux-secondary uppercase tracking-wider text-[10px]">
+                    <th className="pb-3 font-semibold">Guarantor</th>
+                    <th className="pb-3 font-semibold">Commercial Entity</th>
+                    <th className="pb-3 font-semibold">Program Plan</th>
+                    <th className="pb-3 font-semibold">Facility Status</th>
+                    <th className="pb-3 font-semibold">Success Fee</th>
+                    <th className="pb-3 font-semibold text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-hairline/60">
+                  {clients.filter(c => ['APPROVED', 'INVOICE_SENT', 'PAID', 'POST_CARE'].includes(c.stage)).map(c => (
+                    <tr key={c.id} className="hover:bg-white/[0.02] transition-colors">
+                      <td className="py-3.5 font-bold text-lux-primary">{c.firstName} {c.lastName}</td>
+                      <td className="py-3.5 text-lux-secondary">{c.companyName || 'Private Asset'}</td>
+                      <td className="py-3.5 font-mono text-lux-gold">Tier {c.plan}</td>
+                      <td className="py-3.5">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {c.stage}
+                        </span>
+                      </td>
+                      <td className="py-3.5 font-bold text-emerald-400">${(c.invoice?.amount ?? 0).toLocaleString()}</td>
+                      <td className="py-3.5 text-right">
+                        <button 
+                          onClick={() => { setShowLedger(false); navigate({ name: 'client', id: c.id }); }}
+                          className="px-3 py-1 rounded-lg border border-border-gold bg-lux-gold/10 text-lux-gold hover:bg-lux-gold hover:text-canvas-base text-[11px] font-semibold transition-all"
+                        >
+                          Inspect Docket
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {approved === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-lux-tertiary">
+                        No facilities currently in approved reserve status. Advance client pipelines to populate ledger.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-surface-subtle/80 border-t border-border-hairline flex items-center justify-between">
+              <span className="text-[11px] text-lux-tertiary font-mono">ENCRYPTED FCRA AUDIT TRAIL #0087-B</span>
+              <button 
+                onClick={() => window.print()}
+                className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-700 text-lux-primary hover:bg-slate-800 text-xs font-semibold transition-colors"
+              >
+                Print Ledger Summary
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* KPI Cards Grid with Staggered Fade-in */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
