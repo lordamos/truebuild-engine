@@ -1,0 +1,19 @@
+{
+  "name": "truebuild-desktop",
+  "version": "1.0.0",
+  "description": "TrueBuild Dual-Engine Suite Desktop Application (Sumthin3lse Global)",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "python desktop_app.py",
+    "desktop": "venv\\Scripts\\python.exe desktop_app.py",
+    "shortcut": "powershell -ExecutionPolicy Bypass -File .\\create_desktop_shortcut.ps1"
+  },
+  "keywords": [
+    "credit-repair",
+    "business-credit",
+    "truebuild",
+    "desktop"
+  ],
+  "author": "Sumthin3lse Global Solutions LLC",
+  "license": "ISC"
+}

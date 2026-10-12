@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100 select-none">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TrueBuild Dual Desktop Suite</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+    }
+    .iframe-container {
+      height: calc(100vh - 54px);
+      width: 100vw;
+      position: relative;
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      transition: opacity 0.2s ease-in-out;
+    }
+    .tab-active {
+      background: linear-gradient(135deg, rgba(79, 70, 229, 0.25), rgba(124, 58, 237, 0.25));
+      border-color: rgba(99, 102, 241, 0.6);
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+    }
+    .pulse-online {
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.8);
+    }
+    .pulse-offline {
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col bg-slate-950">
+
+  <!-- TOP DESKTOP APP NAVIGATION BAR -->
+  <header class="h-[54px] bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 flex items-center justify-between z-50">
+    
+    <!-- BRAND / TITLE -->
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-500/30">
+        <i class="fa-solid fa-shield-halved text-sm"></i>
+      </div>
+      <div>
+        <div class="text-sm font-bold tracking-tight text-white flex items-center gap-2">
+          TrueBuild <span class="text-xs px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 font-semibold border border-indigo-500/30">DESKTOP</span>
+        </div>
+        <div class="text-[10px] text-slate-400 font-medium">Sumthin3lse Global Dual-Threat Suite</div>
+      </div>
+    </div>
+
+    <!-- MAIN ENGINE TABS -->
+    <div class="flex items-center bg-slate-950/70 p-1 rounded-xl border border-slate-800/80 gap-1">
+      <button id="btn-tab-truebuild" onclick="switchEngine('truebuild')" class="tab-active px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2">
+        <i class="fa-solid fa-building text-indigo-400"></i>
+        <span>Corporate Credit</span>
+        <span class="text-[10px] opacity-60 font-mono">Ctrl+1</span>
+      </button>
+
+      <button id="btn-tab-crm" onclick="switchEngine('crm')" class="text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2">
+        <i class="fa-solid fa-scale-balanced text-violet-400"></i>
+        <span>Personal Credit CRM</span>
+        <span class="text-[10px] opacity-60 font-mono">Ctrl+2</span>
+      </button>
+
+      <button onclick="openFunding()" class="text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 px-3 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-1.5">
+        <i class="fa-solid fa-vault text-amber-400"></i>
+        <span>Funding Matrix</span>
+      </button>
+    </div>
+
+    <!-- ENGINE HEALTH STATUS & CONTROLS -->
+    <div class="flex items-center gap-3">
+      <!-- Status Badges -->
+      <div class="flex items-center gap-2 bg-slate-950/50 px-3 py-1.5 rounded-lg border border-slate-800 text-[11px]">
+        <div class="flex items-center gap-1.5" title="TrueBuild FastAPI Backend (Port 8000)">
+          <span id="dot-truebuild" class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>
+          <span class="text-slate-300 font-mono font-medium">Engine :8000</span>
+        </div>
+        <span class="text-slate-700">|</span>
+        <div class="flex items-center gap-1.5" title="Credit Acceleration CRM (Port 3002)">
+          <span id="dot-crm" class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>
+          <span class="text-slate-300 font-mono font-medium">CRM :3002</span>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="flex items-center gap-1">
+        <button onclick="reloadActiveFrame()" title="Reload Active Tab (Ctrl+R)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition border border-slate-700 text-xs">
+          <i class="fa-solid fa-rotate-right"></i>
+        </button>
+        <button onclick="openInBrowser()" title="Open in External Web Browser" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition border border-slate-700 text-xs">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i>
+        </button>
+      </div>
+    </div>
+
+  </header>
+
+  <!-- VIEWPORT CONTAINER (PRESERVES STATE ACROSS SWITCHES) -->
+  <main class="iframe-container">
+    <iframe id="frame-truebuild" src="http://127.0.0.1:8000" class="z-20 opacity-100 pointer-events-auto"></iframe>
+    <iframe id="frame-crm" src="http://127.0.0.1:3002" class="z-10 opacity-0 pointer-events-none"></iframe>
+  </main>
+
+  <!-- JAVASCRIPT CONTROLLER -->
+  <script>
+    let currentEngine = 'truebuild';
+
+    function switchEngine(engine) {
+      currentEngine = engine;
+      const btnTrueBuild = document.getElementById('btn-tab-truebuild');
+      const btnCrm = document.getElementById('btn-tab-crm');
+      const frameTrueBuild = document.getElementById('frame-truebuild');
+      const frameCrm = document.getElementById('frame-crm');
+
+      if (engine === 'truebuild') {
+        btnTrueBuild.className = "tab-active px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
+        btnCrm.className = "text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
+        frameTrueBuild.style.opacity = '1';
+        frameTrueBuild.style.pointerEvents = 'auto';
+        frameTrueBuild.style.zIndex = '20';
+        frameCrm.style.opacity = '0';
+        frameCrm.style.pointerEvents = 'none';
+        frameCrm.style.zIndex = '10';
+      } else {
+        btnCrm.className = "tab-active px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
+        btnTrueBuild.className = "text-slate-400 hover:text-white hover:bg-slate-800/50 px-4 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-2";
+        frameCrm.style.opacity = '1';
+        frameCrm.style.pointerEvents = 'auto';
+        frameCrm.style.zIndex = '20';
+        frameTrueBuild.style.opacity = '0';
+        frameTrueBuild.style.pointerEvents = 'none';
+        frameTrueBuild.style.zIndex = '10';
+      }
+    }
+
+    function openFunding() {
+      switchEngine('truebuild');
+      try {
+        const frame = document.getElementById('frame-truebuild');
+        frame.contentWindow.postMessage({ action: 'switchTab', tab: 'funding' }, '*');
+        // Fallback: reload hash
+        frame.src = "http://127.0.0.1:8000#funding";
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function reloadActiveFrame() {
+      const activeFrame = currentEngine === 'truebuild' 
+        ? document.getElementById('frame-truebuild') 
+        : document.getElementById('frame-crm');
+      activeFrame.src = activeFrame.src;
+    }
+
+    function openInBrowser() {
+      const url = currentEngine === 'truebuild' ? 'http://127.0.0.1:8000' : 'http://127.0.0.1:3002';
+      if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external) {
+        window.pywebview.api.open_external(url);
+      } else {
+        window.open(url, '_blank');
+      }
+    }
+
+    // Ping check health of services
+    async function checkHealth() {
+      // TrueBuild
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/dashboard/stats', { cache: 'no-store' });
+        const dot = document.getElementById('dot-truebuild');
+        if (res.ok) {
+          dot.className = "w-2 h-2 rounded-full bg-emerald-500 pulse-online";
+        } else {
+          dot.className = "w-2 h-2 rounded-full bg-amber-500";
+        }
+      } catch (e) {
+        const dot = document.getElementById('dot-truebuild');
+        dot.className = "w-2 h-2 rounded-full bg-rose-500 pulse-offline";
+      }
+
+      // CRM
+      try {
+        const res = await fetch('http://127.0.0.1:3002/api/health', { cache: 'no-store' });
+        const dot = document.getElementById('dot-crm');
+        if (res.ok) {
+          dot.className = "w-2 h-2 rounded-full bg-emerald-500 pulse-online";
+        } else {
+          dot.className = "w-2 h-2 rounded-full bg-amber-500";
+        }
+      } catch (e) {
+        const dot = document.getElementById('dot-crm');
+        dot.className = "w-2 h-2 rounded-full bg-rose-500 pulse-offline";
+      }
+    }
+
+    setInterval(checkHealth, 5000);
+    checkHealth();
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '1') {
+        e.preventDefault();
+        switchEngine('truebuild');
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '2') {
+        e.preventDefault();
+        switchEngine('crm');
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+        e.preventDefault();
+        reloadActiveFrame();
+      }
+    });
+  </script>
+</body>
+</html>
