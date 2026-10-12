@@ -376,8 +376,7 @@ Enclosures:
 
 ${letters.length === 0 ? '✅ No items requiring formal FCRA dispute identified.' : `
 ## Letters Generated:
-${letters.map((l, i) => `${i + 1}. **${l.bureau}** - ${disputeItems.filter(i => i.bureau.includes(l.bureau!)).length} item(s) disputed (100% Unique OCR Hash)`).join('
-')}
+${letters.map((l, i) => `${i + 1}. **${l.bureau}** - ${disputeItems.filter(i => i.bureau.includes(l.bureau!)).length} item(s) disputed (100% Unique OCR Hash)`).join('\n')}
 
 ## Critical Mailing Instructions:
 
