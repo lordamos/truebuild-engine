@@ -1,15 +1,6 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "app.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "app.py"
-    }
-  ]
+  "framework": null,
+  "buildCommand": "echo 'Vercel deployment is disabled. This app is intended to run on Render via Docker.'",
+  "outputDirectory": "."
 }
