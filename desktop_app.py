@@ -40,11 +40,11 @@ def ensure_services():
     """Ensure TrueBuild Engine and Credit CRM are running, launching them if needed."""
     python_exe = sys.executable
 
-    # 1. TrueBuild FastAPI (Port 8000)
-    if not is_port_open(8000):
-        print("[Desktop App] Starting TrueBuild Engine on http://127.0.0.1:8000...")
+    # 1. TrueBuild FastAPI (Port 8001)
+    if not is_port_open(8001):
+        print("[Desktop App] Starting TrueBuild Engine (Classic) on http://127.0.0.1:8001...")
         tb_proc = subprocess.Popen(
-            [python_exe, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8000"],
+            [python_exe, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8001"],
             cwd=str(ROOT_DIR),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -52,22 +52,25 @@ def ensure_services():
         )
         spawned_processes.append(tb_proc)
     else:
-        print("[Desktop App] TrueBuild Engine is already running on port 8000.")
+        print("[Desktop App] TrueBuild Engine is already running on port 8001.")
 
-    # 2. Credit Acceleration CRM (Port 3002)
-    if not is_port_open(3002):
-        print("[Desktop App] Starting Credit Acceleration CRM on http://127.0.0.1:3002...")
+    # 2. Credit Acceleration CRM (Port 3003)
+    if not is_port_open(3003):
+        print("[Desktop App] Starting Credit Acceleration CRM (Classic) on http://127.0.0.1:3003...")
         npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
+        crm_env = os.environ.copy()
+        crm_env["PORT"] = "3003"
         crm_proc = subprocess.Popen(
             [npm_cmd, "run", "server"],
             cwd=str(CRM_DIR),
+            env=crm_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         )
         spawned_processes.append(crm_proc)
     else:
-        print("[Desktop App] Credit CRM is already running on port 3002.")
+        print("[Desktop App] Credit CRM is already running on port 3003.")
 
     # Give services a brief moment to initialize
     time.sleep(1.5)
@@ -84,7 +87,7 @@ class DesktopApi:
 
 def main():
     print("==================================================")
-    print("   TrueBuild Dual-Engine Desktop Application      ")
+    print("   TrueBuild Classic FCRA Desktop Application     ")
     print("   Sumthin3lse Global Solutions LLC               ")
     print("==================================================")
 
@@ -94,7 +97,7 @@ def main():
     # 2. Create Desktop Window
     api = DesktopApi()
     window = webview.create_window(
-        title="TrueBuild Suite — Desktop Edition (Sumthin3lse Global)",
+        title="TrueBuild Suite — Classic FCRA Edition (Sumthin3lse Global)",
         url=str(SHELL_HTML.as_uri()),
         width=1440,
         height=900,

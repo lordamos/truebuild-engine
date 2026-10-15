@@ -74,9 +74,9 @@
       </div>
       <div>
         <div class="text-sm font-bold tracking-tight text-[#f5f5f7] flex items-center gap-2">
-          TrueBuild <span class="text-[10px] px-2 py-0.5 rounded font-extrabold uppercase tracking-wider bg-amber-500/15 text-[#d9b779] border border-amber-500/30">EXECUTIVE SUITE</span>
+          TrueBuild <span class="text-[10px] px-2 py-0.5 rounded font-extrabold uppercase tracking-wider bg-amber-500/15 text-[#d9b779] border border-amber-500/30">CLASSIC FCRA EDITION</span>
         </div>
-        <div class="text-[10px] text-[#9d9da8] font-medium">Sumthin3lse Global Dual-Threat Architecture</div>
+        <div class="text-[10px] text-[#9d9da8] font-medium">15-Field Cross-Bureau Discrepancy Engine • LetterStream Certified Mail</div>
       </div>
     </div>
 
@@ -104,14 +104,14 @@
     <div class="flex items-center gap-3">
       <!-- Status Badges -->
       <div class="flex items-center gap-2 bg-[#111115]/80 px-3 py-1.5 rounded-xl border border-white/[0.06] text-[11px]">
-        <div class="flex items-center gap-1.5" title="TrueBuild FastAPI Backend (Port 8000)">
+        <div class="flex items-center gap-1.5" title="TrueBuild FastAPI Backend (Port 8001)">
           <span id="dot-truebuild" class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>
-          <span class="text-slate-300 font-mono font-medium">Engine :8000</span>
+          <span class="text-slate-300 font-mono font-medium">Engine :8001</span>
         </div>
         <span class="text-slate-700">|</span>
-        <div class="flex items-center gap-1.5" title="Credit Acceleration CRM (Port 3002)">
+        <div class="flex items-center gap-1.5" title="Credit Acceleration CRM (Port 3003)">
           <span id="dot-crm" class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>
-          <span class="text-slate-300 font-mono font-medium">CRM :3002</span>
+          <span class="text-slate-300 font-mono font-medium">CRM :3003</span>
         </div>
       </div>
 
@@ -130,8 +130,8 @@
 
   <!-- VIEWPORT CONTAINER (PRESERVES STATE ACROSS SWITCHES) -->
   <main class="iframe-container">
-    <iframe id="frame-truebuild" src="http://127.0.0.1:8000" class="z-20 opacity-100 pointer-events-auto"></iframe>
-    <iframe id="frame-crm" src="http://127.0.0.1:3002" class="z-10 opacity-0 pointer-events-none"></iframe>
+    <iframe id="frame-truebuild" src="http://127.0.0.1:8001" class="z-20 opacity-100 pointer-events-auto"></iframe>
+    <iframe id="frame-crm" src="http://127.0.0.1:3003" class="z-10 opacity-0 pointer-events-none"></iframe>
   </main>
 
   <!-- JAVASCRIPT CONTROLLER -->
@@ -171,7 +171,7 @@
       try {
         const frame = document.getElementById('frame-truebuild');
         frame.contentWindow.postMessage({ action: 'switchTab', tab: 'funding' }, '*');
-        frame.src = "http://127.0.0.1:8000#funding";
+        frame.src = "http://127.0.0.1:8001#funding";
       } catch (e) {
         console.error(e);
       }
@@ -185,7 +185,7 @@
     }
 
     function openInBrowser() {
-      const url = currentEngine === 'truebuild' ? 'http://127.0.0.1:8000' : 'http://127.0.0.1:3002';
+      const url = currentEngine === 'truebuild' ? 'http://127.0.0.1:8001' : 'http://127.0.0.1:3003';
       if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external) {
         window.pywebview.api.open_external(url);
       } else {
@@ -195,7 +195,7 @@
 
     async function checkHealth() {
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/dashboard/stats', { cache: 'no-store' });
+        const res = await fetch('http://127.0.0.1:8001/api/dashboard/stats', { cache: 'no-store' });
         const dot = document.getElementById('dot-truebuild');
         if (res.ok) {
           dot.className = "w-2 h-2 rounded-full bg-emerald-500 pulse-online";
@@ -208,7 +208,7 @@
       }
 
       try {
-        const res = await fetch('http://127.0.0.1:3002/api/health', { cache: 'no-store' });
+        const res = await fetch('http://127.0.0.1:3003/api/health', { cache: 'no-store' });
         const dot = document.getElementById('dot-crm');
         if (res.ok) {
           dot.className = "w-2 h-2 rounded-full bg-emerald-500 pulse-online";
