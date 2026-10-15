@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  truebuild-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: truebuild-engine
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+    restart: unless-stopped
+
+  credit-crm:
+    build:
+      context: ./credit-crm
+      dockerfile: Dockerfile
+    container_name: credit-acceleration-crm
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - NODE_ENV=production
+    volumes:
+      - crm-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  crm-data:

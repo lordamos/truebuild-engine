@@ -95,6 +95,13 @@ class TradelineLink(BaseModel):
     credit_limit: float = Field(default=500.0, gt=0)
 
 # ---------------------------------------------------------------------------
+# Health Check Endpoint
+# ---------------------------------------------------------------------------
+@app.get("/api/health")
+def health_check():
+    return {"status": "healthy", "service": "TrueBuild Corporate Credit Engine", "version": "1.0.0"}
+
+# ---------------------------------------------------------------------------
 # Auth Endpoints
 # ---------------------------------------------------------------------------
 @app.post("/api/auth/register", response_model=LoginResponse)
