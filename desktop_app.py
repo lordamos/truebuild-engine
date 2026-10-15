@@ -94,7 +94,7 @@ def main():
     # 2. Create Desktop Window
     api = DesktopApi()
     window = webview.create_window(
-        title="TrueBuild Suite — Desktop Edition (Sumthin3lse Global)",
+        title="TrueBuild Suite — Ryezing 10x Edition (Sumthin3lse Global)",
         url=str(SHELL_HTML.as_uri()),
         width=1440,
         height=900,
