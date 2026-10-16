@@ -98,6 +98,11 @@
         <i class="fa-solid fa-vault text-[#d9b779]"></i>
         <span>Funding Matrix</span>
       </button>
+
+      <button onclick="openCovenant()" class="text-[#9d9da8] hover:text-amber-300 hover:bg-amber-500/10 px-3 py-1.5 rounded-lg text-xs font-semibold border border-transparent transition flex items-center gap-1.5" title="The Covenant of Transparency">
+        <i class="fa-solid fa-compass text-amber-400"></i>
+        <span>The Covenant</span>
+      </button>
     </div>
 
     <!-- ENGINE HEALTH STATUS & CONTROLS -->
@@ -172,6 +177,16 @@
         const frame = document.getElementById('frame-truebuild');
         frame.contentWindow.postMessage({ action: 'switchTab', tab: 'funding' }, '*');
         frame.src = "http://127.0.0.1:8001#funding";
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function openCovenant() {
+      switchEngine('crm');
+      try {
+        const frame = document.getElementById('frame-crm');
+        frame.src = "http://127.0.0.1:3003/#/covenant";
       } catch (e) {
         console.error(e);
       }

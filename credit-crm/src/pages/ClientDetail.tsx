@@ -17,6 +17,7 @@ import { PIPELINE_STAGES, AGENT_META, EMAIL_STAGE_META, TRUEBUILD_DEFAULT_VENDOR
 import type { Page } from '../App';
 import { AutoRepairEngine } from '../components/AutoRepairEngine';
 import { FcraWalkthroughEngine } from '../components/FcraWalkthroughEngine';
+import { CovenantOfTransparency } from '../components/CovenantOfTransparency';
 import { 
   ArrowLeft, 
   Bot, 
@@ -53,7 +54,8 @@ import {
   ExternalLink,
   PlusCircle,
   FastForward,
-  ShieldAlert
+  ShieldAlert,
+  Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -66,7 +68,7 @@ const EMAIL_STAGES: EmailStage[] = ['WELCOME', 'DOCS_VERIFIED', 'SUBMITTED', 'AP
 
 interface Props { clientId: string; navigate: (p: Page) => void; }
 
-type Tab = 'overview' | 'fcra-strategy' | 'repair' | 'business-audit' | 'truebuild' | 'agents' | 'emails' | 'disputes' | 'agreement';
+type Tab = 'overview' | 'fcra-strategy' | 'covenant' | 'repair' | 'business-audit' | 'truebuild' | 'agents' | 'emails' | 'disputes' | 'agreement';
 
 function renderMarkdown(text: string): string {
   return text
@@ -346,6 +348,7 @@ export function ClientDetail({ clientId, navigate }: Props) {
   const tabs: { id: Tab; label: string; icon: any; count?: number }[] = [
     { id: 'overview', label: 'Overview', icon: FileText },
     { id: 'fcra-strategy', label: 'FCRA 5-Step Engine', icon: ShieldAlert, count: 5 },
+    { id: 'covenant', label: 'Covenant of Transparency', icon: Compass },
     { id: 'repair', label: 'Auto Repair', icon: Wrench },
     { id: 'business-audit', label: 'Commercial Audit (5 Prompts)', icon: Building2, count: bizAuditsDone },
     { id: 'truebuild', label: 'Corporate Credit (TrueBuild)', icon: Award, count: truebuildData?.profile?.tradelines?.length ?? client.truebuildProfile?.tradelines?.length ?? 0 },
@@ -573,6 +576,15 @@ export function ClientDetail({ clientId, navigate }: Props) {
           {/* Tab: FCRA 5-Step Deletion Engine */}
           {tab === 'fcra-strategy' && (
             <FcraWalkthroughEngine client={client} onUpdate={(updated) => setClient(updated)} />
+          )}
+
+          {/* Tab: Covenant of Transparency */}
+          {tab === 'covenant' && (
+            <div className="glass-card rounded-3xl p-6 md:p-8 border border-amber-500/20 shadow-2xl">
+              <CovenantOfTransparency 
+                signatoryName={`${client.firstName} ${client.lastName}`} 
+              />
+            </div>
           )}
 
           {/* Tab: Auto Repair */}
